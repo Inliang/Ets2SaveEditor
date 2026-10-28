@@ -102,7 +102,9 @@
                 <Setter Property="AlternationCount" Value="2"/>
                 <Setter Property="RowBackground" Value="White"/>
                 <Setter Property="AlternatingRowBackground" Value="{StaticResource RowAltBrush}"/>
-                <Setter Property="EnableRowVirtualization" Value="False"/>
+                <Setter Property="EnableRowVirtualization" Value="True"/>
+                <Setter Property="VirtualizingPanel.IsVirtualizing" Value="True"/>
+                <Setter Property="VirtualizingPanel.VirtualizationMode" Value="Recycling"/>
             </Style>
             <Style TargetType="DataGridColumnHeader">
                 <Setter Property="Background" Value="{StaticResource PrimaryBrush}"/>

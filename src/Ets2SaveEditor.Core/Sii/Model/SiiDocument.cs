@@ -1,9 +1,9 @@
 using System;
 using System.Collections.Generic;
+using Ets2SaveEditor.Core.Sii;
 
 namespace Ets2SaveEditor.Core.Sii.Model
-{
-    /// <summary>
+{    /// <summary>
     /// Top-level SII document (the content between the outer braces).
     /// </summary>
     public class SiiDocument
@@ -13,6 +13,13 @@ namespace Ets2SaveEditor.Core.Sii.Model
 
         /// <summary>Ordered list of units.</summary>
         public List<SiiUnit> Units { get; set; }
+
+        /// <summary>
+        /// Schema of the document: it tells which attributes of which unit type
+        /// are arrays. Needed to tell an empty array (<c>name: 0</c>) apart
+        /// from an ordinary integer attribute.
+        /// </summary>
+        public SiiSchema Schema { get; set; }
 
         public SiiDocument()
         {

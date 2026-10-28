@@ -90,6 +90,20 @@ namespace Ets2SaveEditor.Core.Sii
         /// <exception cref="SiiFormatException">When the payload is malformed.</exception>
         public static string Decode(byte[] binary)
         {
+            return Decode(binary, out _);
+        }
+
+        /// <summary>
+        /// Decodes a binary BSII payload into plaintext SII text and reports the
+        /// schema (which attributes of which unit type are arrays) that was
+        /// embedded in the payload.
+        /// </summary>
+        /// <param name="binary">Raw payload starting with the <c>BSII</c> magic.</param>
+        /// <param name="schema">Receives the schema of the decoded file.</param>
+        /// <returns>The SII text (UTF-8 compatible, CRLF line endings).</returns>
+        /// <exception cref="SiiFormatException">When the payload is malformed.</exception>
+        public static string Decode(byte[] binary, out SiiSchema schema)
+        {
             if (binary == null)
             {
                 throw new ArgumentNullException(nameof(binary));
@@ -110,6 +124,7 @@ namespace Ets2SaveEditor.Core.Sii
             uint version = reader.ReadUInt32();
 
             var structures = new Dictionary<uint, BsiiStructure>();
+            var schemaFields = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
             var sb = new StringBuilder();
             sb.Append(Constants.SiiHeader).Append(NewLine);
             sb.Append('{').Append(NewLine);
@@ -136,6 +151,7 @@ namespace Ets2SaveEditor.Core.Sii
 
                     string structureName = reader.ReadString();
                     var fields = new List<BsiiField>();
+                    var arrayFieldNames = new HashSet<string>(StringComparer.Ordinal);
 
                     while (true)
                     {
@@ -162,9 +178,15 @@ namespace Ets2SaveEditor.Core.Sii
                         }
 
                         fields.Add(new BsiiField(typeId, fieldName, ordinalValues));
+
+                        if (IsArrayType(typeId))
+                        {
+                            arrayFieldNames.Add(fieldName);
+                        }
                     }
 
                     structures[structureId] = new BsiiStructure(structureName, fields);
+                    schemaFields[structureName] = arrayFieldNames;
                     continue;
                 }
 
@@ -186,6 +208,7 @@ namespace Ets2SaveEditor.Core.Sii
             }
 
             sb.Append('}').Append(NewLine);
+            schema = new SiiSchema(schemaFields);
             return sb.ToString();
         }
 

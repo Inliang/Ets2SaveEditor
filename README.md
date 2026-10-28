@@ -42,9 +42,10 @@ Ets2SaveEditor 会自动识别上述格式：`ScsC` → AES-256-CBC 解密 → z
 | | 编辑 / 分享用户颜色 | 🔲 规划中 | 编辑卡车与挂车涂装颜色（P2） |
 | | 分享卡车涂装 | 🔲 规划中 | 导出 / 导入卡车涂装配置（P2） |
 | **资产** | 购买 / 升级车库 | ⚠️ 部分实现 | 可查看车库状态 / 车辆 / 司机 / 挂车；**暂不能真正购买新车库**（`garage.status` 语义未经证实） |
-| | 标记城市为已访问 | ✅ 已实现 | 编辑 `economy` 的已访问城市列表 |
-| | 从已探索城市抓取货物 | 🔲 规划中 | 基于已访问城市生成可用货物（P2） |
-| **货运市场** | 创建自定义货运任务 | ⚠️ 部分实现 | 可浏览货运市场（`job_info` / `job_offer_data`）；**自定义任务暂不可创建**（游戏不把报酬写入存档） |
+| | 标记城市为已访问 | ✅ 已实现 | 「城市」页签可解锁 / 取消访问 334 座城市（写入 `economy.visited_cities`） |
+| | 从已探索城市抓取货物 | ✅ 已实现 | 解锁城市后，其货运市场即可在游戏内使用；工具内可直接浏览该城市的任务 |
+| **货运市场** | 创建自定义货运任务 | ✅ 已实现 | 「货运市场」页签可新建任务：创建 `job_offer_data` 单元**并注册到公司**的 `job_offer` 数组（缺一不可，游戏才认） |
+| | 任务报酬估算 | ✅ 已实现 | 实时显示「预估报酬」与「每公里报酬」；费率取自真实存档的 `delivery_log_entry` 实测数据 |
 | | 货物市场浏览 / 编辑 | ✅ 已实现 | 浏览内置城市与货物数据 |
 | **分享 / 协作** | 分享卡车位置 | 🔲 规划中 | 导出 / 导入卡车坐标（P2） |
 | | 分享 GPS 路径 | 🔲 规划中 | 导出 / 导入导航路径（P2） |
@@ -93,17 +94,21 @@ Ets2SaveEditor/
 │   │   │       ├── Garage.cs           # 状态 / 位置 / 升级 / 购买
 │   │   │       ├── Vehicle.cs          # 磨损 / 燃油 / 修理 / 加油
 │   │   │       ├── Trailer.cs          # 磨损 / 修理
-│   │   │       ├── JobOffer.cs         # 货运任务（源/目标城市、货物、报酬）
+│   │   │       ├── Company.cs          # 货运公司（持有 job_offer 数组）
+│   │   │       ├── JobOffer.cs         # 货运任务（目标公司、货物、报酬估算）
 │   │   │       └── Economy.cs          # 已访问城市
 │   │   ├── GameData/                   # 内置游戏数据（城市 / 货物 / 公司）
+│   │   │   ├── CityCatalogue.cs       # 334 座城市（中英文对照）
+│   │   │   ├── CargoCatalogue.cs      # 350 种货物 + 实测单位费率
+│   │   │   └── JobIncomeEstimator.cs  # 报酬 / 每公里报酬估算
 │   │   └── Persistence/                # 存档位置探测 / 备份服务
 │   └── Ets2SaveEditor/                 # WPF 应用（net8.0-windows，MVVM）
 │       ├── App.xaml(.cs)               # 应用入口 + 全局异常处理
-│       ├── MainWindow.xaml(.cs)        # 菜单 / 右侧「档案与存档」面板 / 7 标签页 / 状态栏
+│       ├── MainWindow.xaml(.cs)        # 菜单 / 右侧「档案与存档」面板 / 8 标签页 / 状态栏
 │       ├── ViewModels/                 # Main / Profile / Garages / Truck / Trailer
-│       │                               #   / FreightMarket / Cargo / Settings
+│       │                               #   / FreightMarket / Cargo / Cities / Settings
 │       │                               #   + SaveProfileItem（档案分组、友好档案名）
-│       ├── Views/                      # 对应 7 个标签页的 XAML 视图
+│       ├── Views/                      # 对应 8 个标签页的 XAML 视图
 │       ├── Services/DialogService.cs   # 文件/文件夹选择、消息框
 │       └── Converters/WearToColorConverter.cs  # 磨损 → 颜色画刷
 └── tests/
@@ -149,7 +154,6 @@ dotnet run --project tests/Ets2SaveEditor.Tests
 
 - [ ] **3NK 格式**解析（ATS 变体；`BSII` 二进制格式已于 v0.0.5 支持）
 - [ ] 卡车 / 挂车**颜色与涂装**的编辑与分享
-- [ ] **从已探索城市抓取货物**的自动生成
 - [ ] **卡车位置 / GPS 路径 / 编队控制包**的分享
 - [ ] **Mod 扫描**（加载 Mod 提供的城市 / 货物数据）
 - [ ] 跨平台支持探索（Avalonia / MAUI 替代 WPF）

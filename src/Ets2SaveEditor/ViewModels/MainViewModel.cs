@@ -60,6 +60,7 @@ namespace Ets2SaveEditor.ViewModels
         public TrailerViewModel Trailer { get; } = new TrailerViewModel();
         public FreightMarketViewModel Freight { get; } = new FreightMarketViewModel();
         public CargoViewModel Cargo { get; } = new CargoViewModel();
+        public CitiesViewModel Cities { get; } = new CitiesViewModel();
         public SettingsViewModel Settings { get; } = new SettingsViewModel();
 
         public MainViewModel()
@@ -234,6 +235,7 @@ namespace Ets2SaveEditor.ViewModels
                 Trailer.LoadFrom(sf);
                 Freight.LoadFrom(sf);
                 Cargo.LoadFrom(sf);
+                Cities.LoadFrom(sf);
                 StatusText = "已加载：" + path;
                 UpdateLoadedInfo();
             }

@@ -79,9 +79,10 @@ namespace Ets2SaveEditor.Core.Domain
             LastBackupPath = null;
 
             string text;
+            SiiSchema schema;
             try
             {
-                text = SiiFormatDetector.Decode(raw, Format);
+                text = SiiFormatDetector.Decode(raw, Format, out schema);
             }
             catch (SiiFormatException)
             {
@@ -94,9 +95,15 @@ namespace Ets2SaveEditor.Core.Domain
                 throw new SiiFormatException("Failed to decode save file: " + Path, ex);
             }
 
+            // 二进制存档自带结构定义（权威）；明文存档退回内置表。
+            if (schema == null || schema.UnitTypeCount == 0)
+            {
+                schema = BuiltInSiiSchema.Instance;
+            }
+
             try
             {
-                Document = SiiParser.Parse(text);
+                Document = SiiParser.Parse(text, schema);
             }
             catch (Exception ex)
             {

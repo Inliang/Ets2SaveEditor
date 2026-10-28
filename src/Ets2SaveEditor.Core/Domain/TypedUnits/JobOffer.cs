@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using Ets2SaveEditor.Core.Common;
+using Ets2SaveEditor.Core.GameData;
 using Ets2SaveEditor.Core.Sii.Model;
 
 namespace Ets2SaveEditor.Core.Domain.TypedUnits
@@ -28,11 +29,43 @@ namespace Ets2SaveEditor.Core.Domain.TypedUnits
             _doc = doc;
         }
 
-        /// <summary>Destination city of the offer (<c>target</c>).</summary>
-        public string TargetCity
+        /// <summary>
+        /// Destination company of the offer (<c>target</c>), in the short form
+        /// the game uses, e.g. <c>stokes.erfurt</c>.
+        /// </summary>
+        public string Target
         {
             get { return _unit != null ? _unit.GetString("target") : string.Empty; }
             set { if (_unit != null) _unit.SetScalarPreserveStyle("target", value); }
+        }
+
+        /// <summary>
+        /// City of the destination company, e.g. <c>erfurt</c>. The target
+        /// reference has the form <c>&lt;brand&gt;.&lt;city&gt;</c>.
+        /// </summary>
+        public string TargetCity
+        {
+            get
+            {
+                string target = Target;
+                if (string.IsNullOrEmpty(target)) return string.Empty;
+                int dot = target.LastIndexOf('.');
+                return dot >= 0 && dot < target.Length - 1 ? target.Substring(dot + 1) : target;
+            }
+        }
+
+        /// <summary>
+        /// Brand of the destination company, e.g. <c>stokes</c>.
+        /// </summary>
+        public string TargetBrand
+        {
+            get
+            {
+                string target = Target;
+                if (string.IsNullOrEmpty(target)) return string.Empty;
+                int dot = target.LastIndexOf('.');
+                return dot > 0 ? target.Substring(0, dot) : target;
+            }
         }
 
         /// <summary>Cargo of the offer (<c>cargo</c>, an id such as <c>cargo.haulie</c>).</summary>
@@ -113,8 +146,55 @@ namespace Ets2SaveEditor.Core.Domain.TypedUnits
         }
 
         /// <summary>
+        /// Estimated income of the offer in euros.
+        /// <para>
+        /// The modern save format does not store the income of a job offer —
+        /// the game computes it from cargo, distance and urgency. This
+        /// property reproduces that computation so the player can see which
+        /// offers are worth taking.
+        /// </para>
+        /// </summary>
+        public long EstimatedIncome
+        {
+            get
+            {
+                return JobIncomeEstimator.Estimate(
+                    Cargo, DistanceKm, UnitsCount, Urgency, FillRatio);
+            }
+        }
+
+        /// <summary>Estimated income of the offer, formatted for display.</summary>
+        public string EstimatedIncomeText => JobIncomeEstimator.Format(EstimatedIncome);
+
+        /// <summary>
+        /// Estimated income of the offer per kilometre — the figure that makes
+        /// offers comparable regardless of their length.
+        /// </summary>
+        public double EstimatedIncomePerKm =>
+            JobIncomeEstimator.EstimatePerKm(Cargo, UnitsCount, Urgency);
+
+        /// <summary>Estimated income per kilometre, formatted for display.</summary>
+        public string EstimatedIncomePerKmText =>
+            JobIncomeEstimator.FormatPerKm(EstimatedIncomePerKm);
+
+        /// <summary>
+        /// Name of the target city (resolved through the city catalogue).
+        /// </summary>
+        public string TargetCityName => CityCatalogue.DisplayName(TargetCity);
+        /// <summary>
+        /// Name of the cargo (resolved through the cargo catalogue).
+        /// </summary>
+        public string CargoName => CargoCatalogue.DisplayName(Cargo);
+
+        /// <summary>
         /// Creates a new <c>job_offer_data</c> unit with the complete field
         /// set of the modern format and appends it to the document.
+        /// <para>
+        /// The unit is created but <em>not</em> registered with a company, so
+        /// the game will not show it. Use
+        /// <see cref="CreateAndRegister"/> to create a job that actually
+        /// shows up in the freight market.
+        /// </para>
         /// </summary>
         public static JobOffer Create(SiiDocument doc, string id, string targetCity, string cargo, string truck)
         {
@@ -141,6 +221,73 @@ namespace Ets2SaveEditor.Core.Domain.TypedUnits
 
             doc.Units.Add(unit);
             return new JobOffer(unit, doc);
+        }
+
+        /// <summary>
+        /// Creates a custom job offer that the game will actually display.
+        /// <para>
+        /// The modern save format stores the freight market as a two-way
+        /// relation: a <c>job_offer_data</c> unit describes the offer and
+        /// the owning company references it in its <c>job_offer</c> array.
+        /// An offer that no company references is invisible to the game, so
+        /// this method does both: it creates the offer unit and registers it
+        /// with the given company (and marks the company as discovered when
+        /// it was not yet).
+        /// </para>
+        /// </summary>
+        /// <param name="doc">Document to add the offer to.</param>
+        /// <param name="company">Company that publishes the offer.</param>
+        /// <param name="cargo">Cargo token, e.g. <c>cargo.haulie</c>.</param>
+        /// <param name="truck">Company truck model id.</param>
+        /// <param name="distanceKm">Distance to the destination in kilometres.</param>
+        /// <param name="units">Number of cargo units offered.</param>
+        /// <param name="urgency">Urgency level (0..3).</param>
+        /// <returns>The new offer, or null when the arguments are invalid.</returns>
+        public static JobOffer CreateAndRegister(
+            SiiDocument doc,
+            Company company,
+            string cargo,
+            string truck,
+            int distanceKm,
+            int units,
+            int urgency)
+        {
+            if (doc == null || company == null) return null;
+
+            // The target of an offer is the short reference of the company
+            // that receives the goods, e.g. "stokes.erfurt".
+            var offer = Create(doc, null, company.ShortReference, cargo, truck);
+            if (offer == null) return null;
+
+            offer.DistanceKm = distanceKm;
+            offer.UnitsCount = units;
+            offer.Urgency = urgency;
+            offer.FillRatio = 1.0;
+
+            company.AddJobOffer(offer.Unit.Id);
+            if (!company.Discovered)
+            {
+                company.Discovered = true;
+            }
+
+            return offer;
+        }
+
+        /// <summary>
+        /// Removes the offer from the document and unregisters it from every
+        /// company that references it.
+        /// </summary>
+        public bool Remove()
+        {
+            if (_unit == null || _doc == null) return false;
+
+            foreach (var company in Company.AllFromDocument(_doc))
+            {
+                company.RemoveJobOffer(_unit.Id);
+            }
+
+            _doc.Units.Remove(_unit);
+            return true;
         }
 
         /// <summary>

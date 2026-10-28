@@ -33,7 +33,26 @@ namespace Ets2SaveEditor.Core.Sii
         /// <exception cref="SiiFormatException">When the text is empty or malformed.</exception>
         public static SiiDocument Parse(string text)
         {
+            return Parse(text, SiiSchema.Empty);
+        }
+
+        /// <summary>
+        /// Parses the given SII text into a <see cref="SiiDocument"/> using the
+        /// given schema.
+        /// <para>
+        /// The schema tells the parser which attributes are arrays. Without it
+        /// an empty array (<c>name: 0</c> with no indexed lines) cannot be
+        /// distinguished from an ordinary integer attribute, which would make
+        /// e.g. the wheel wear of a trailer look like a single value and make
+        /// the tool write an array with one element back — corrupting the
+        /// save file.
+        /// </para>
+        /// </summary>
+        /// <exception cref="SiiFormatException">When the text is empty or malformed.</exception>
+        public static SiiDocument Parse(string text, SiiSchema schema)
+        {
             var doc = new SiiDocument();
+            doc.Schema = schema ?? SiiSchema.Empty;
 
             if (string.IsNullOrEmpty(text))
             {
@@ -169,14 +188,19 @@ namespace Ets2SaveEditor.Core.Sii
                                 AddAttribute(unit, name, value, line);
                             }
                         }
+                        else if (doc.Schema.IsArrayField(type, name) && value is IntValue)
+                        {
+                            // 数组头（元素个数）。个数本身不是数据：真正的元素
+                            // 由随后的 name[i] 行给出；空数组则没有任何元素行。
+                            AddArrayHeader(unit, name, value, line);
+                        }
                         else
                         {
                             AddAttribute(unit, name, value, line);
                         }
                         index++;
                         continue;
-                    }
-                }
+                    }                }
 
                 // Anything else (comment, blank, unrecognized) -> raw.
                 unit.RawLines.Add(line);
@@ -226,6 +250,41 @@ namespace Ets2SaveEditor.Core.Sii
             // Convert the single value into an array containing old + new.
             var newArray = new ArrayValue(new List<SiiValue> { existing.Value, value });
             existing.Value = newArray;
+            existing.IsArray = true;
+        }
+
+        /// <summary>
+        /// Records the header line of an array (the element count).
+        /// <para>
+        /// The count itself is not data — the elements follow as
+        /// <c>name[i]</c> lines and the serializer regenerates the count. The
+        /// attribute is therefore created as an empty array right away, so an
+        /// array without any element (count 0) stays an empty array instead of
+        /// being mistaken for an integer attribute.
+        /// </para>
+        /// </summary>
+        private static void AddArrayHeader(SiiUnit unit, string name, SiiValue value, string rawText)
+        {
+            var existing = unit.GetAttribute(name);
+            if (existing == null)
+            {
+                unit.Attributes.Add(new SiiAttribute(name, new ArrayValue(new List<SiiValue>()))
+                {
+                    IsArray = true,
+                    RawText = rawText
+                });
+                return;
+            }
+
+            if (existing.Value is ArrayValue arr)
+            {
+                existing.Value = arr;
+                existing.IsArray = true;
+                return;
+            }
+
+            // 兜底：已有标量值，转成数组。
+            existing.Value = new ArrayValue(new List<SiiValue>());
             existing.IsArray = true;
         }
 

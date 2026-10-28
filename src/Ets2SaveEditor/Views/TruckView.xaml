@@ -14,7 +14,7 @@
         </Border>
         <DataGrid ItemsSource="{Binding Items}" AutoGenerateColumns="False" IsReadOnly="False">
             <DataGrid.Columns>
-                <DataGridTextColumn Header="标识" Binding="{Binding Unit.Id}" IsReadOnly="True" Width="2*"/>
+                <DataGridTextColumn Header="标识" Binding="{Binding Unit.Id}" IsReadOnly="True" Width="200"/>
                 <DataGridTextColumn Header="发动机磨损" Binding="{Binding EngineWear, StringFormat=P0}" IsReadOnly="True" Width="Auto"/>
                 <DataGridTextColumn Header="底盘磨损" Binding="{Binding ChassisWear, StringFormat=P0}" IsReadOnly="True" Width="Auto"/>
                 <DataGridTextColumn Header="变速箱磨损" Binding="{Binding TransmissionWear, StringFormat=P0}" IsReadOnly="True" Width="Auto"/>

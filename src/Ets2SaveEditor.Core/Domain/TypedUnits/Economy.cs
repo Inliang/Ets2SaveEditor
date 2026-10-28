@@ -44,6 +44,73 @@ namespace Ets2SaveEditor.Core.Domain.TypedUnits
             }
         }
 
+        /// <summary>
+        /// Number of cities the player has visited.
+        /// </summary>
+        public int VisitedCityCount => VisitedCities.Count;
+
+        /// <summary>
+        /// Adds a city to the list of visited cities, which unlocks it for
+        /// the player (the city becomes selectable in the freight market and
+        /// the job list).
+        /// </summary>
+        /// <param name="token">City token, e.g. "london".</param>
+        /// <returns>True when the city was added, false when it was already
+        /// visited or the token was empty.</returns>
+        public bool VisitCity(string token)
+        {
+            if (_unit == null || string.IsNullOrEmpty(token)) return false;
+
+            string trimmed = token.Trim();
+            if (trimmed.Length == 0) return false;
+
+            var current = new List<SiiValue>();
+            foreach (var item in _unit.GetArrayItems(Constants.EconomyVisitedCitiesAttribute))
+            {
+                current.Add(item);
+            }
+
+            foreach (var item in current)
+            {
+                if (string.Equals(item.AsId(), trimmed, System.StringComparison.OrdinalIgnoreCase))
+                {
+                    return false; // 已经访问过
+                }
+            }
+
+            current.Add(new ReferenceValue(trimmed));
+            _unit.SetArrayItems(Constants.EconomyVisitedCitiesAttribute, current);
+            return true;
+        }
+
+        /// <summary>
+        /// Removes a city from the list of visited cities.
+        /// </summary>
+        /// <returns>True when the city was removed.</returns>
+        public bool UnvisitCity(string token)
+        {
+            if (_unit == null || string.IsNullOrEmpty(token)) return false;
+
+            string trimmed = token.Trim();
+            var current = new List<SiiValue>();
+            bool removed = false;
+
+            foreach (var item in _unit.GetArrayItems(Constants.EconomyVisitedCitiesAttribute))
+            {
+                if (string.Equals(item.AsId(), trimmed, System.StringComparison.OrdinalIgnoreCase))
+                {
+                    removed = true;
+                    continue;
+                }
+                current.Add(item);
+            }
+
+            if (!removed) return false;
+
+            _unit.SetArrayItems(Constants.EconomyVisitedCitiesAttribute, current);
+            return true;
+        }
+
         /// <summary>Accumulated experience points (<c>experience_points</c>).</summary>
         public long ExperiencePoints
         {

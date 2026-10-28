@@ -63,6 +63,11 @@
                         <views:CargoView DataContext="{Binding Cargo}"/>
                     </Border>
                 </TabItem>
+                <TabItem Header="城市">
+                    <Border Style="{StaticResource CardStyle}" Margin="6">
+                        <views:CitiesView DataContext="{Binding Cities}"/>
+                    </Border>
+                </TabItem>
                 <TabItem Header="设置">
                     <Border Style="{StaticResource CardStyle}" Margin="6">
                         <views:SettingsView DataContext="{Binding Settings}"/>

@@ -5,22 +5,59 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              mc:Ignorable="d" d:DesignHeight="420" d:DesignWidth="600">
     <DockPanel>
+        <!-- 新建自定义任务 -->
         <Border DockPanel.Dock="Top" Style="{StaticResource CardStyle}" Margin="0,0,0,8">
-            <StackPanel Orientation="Horizontal">
-                <Button Content="新建任务" Command="{Binding CreateJobCommand}" Margin="0,0,8,0"/>
-                <Button Content="删除所选" Command="{Binding DeleteJobCommand}" CommandParameter="{Binding SelectedItem, ElementName=Dg}"/>
-                <TextBlock Text="货运市场条目来自 job_offer_data 单元：目标城市、货物、公司车辆均为游戏内英文标识。" VerticalAlignment="Center" Margin="12,0,0,0" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"/>
+            <StackPanel>
+                <TextBlock Text="新建自定义货运任务" FontWeight="Bold" Margin="0,0,0,6"/>
+                <WrapPanel>
+                    <TextBlock Text="收货公司" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                    <TextBox Text="{Binding CompanyFilter, UpdateSourceTrigger=PropertyChanged}"
+                             Width="150" VerticalAlignment="Center" Margin="0,0,12,0"
+                             ToolTip="按公司标识或城市名筛选"/>
+                    <ComboBox ItemsSource="{Binding Companies}" SelectedItem="{Binding SelectedCompany}"
+                              Width="230" Margin="0,0,12,0"
+                              ToolTip="选择接收货物的公司（target）"/>
+                    <TextBlock Text="货物" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                    <TextBox Text="{Binding NewCargo, UpdateSourceTrigger=PropertyChanged}"
+                             Width="140" VerticalAlignment="Center" Margin="0,0,12,0"
+                             ToolTip="货物标识，例如 cargo.haulie"/>
+                    <TextBlock Text="数量" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                    <TextBox Text="{Binding NewUnits, UpdateSourceTrigger=LostFocus}"
+                             Width="50" VerticalAlignment="Center" Margin="0,0,12,0"/>
+                    <TextBlock Text="距离(km)" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                    <TextBox Text="{Binding NewDistance, UpdateSourceTrigger=LostFocus}"
+                             Width="70" VerticalAlignment="Center" Margin="0,0,12,0"/>
+                    <TextBlock Text="紧急度" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                    <ComboBox SelectedItem="{Binding NewUrgency}" Width="62" Margin="0,0,12,0">
+                        <sys:Int32 xmlns:sys="clr-namespace:System;assembly=mscorlib">0</sys:Int32>
+                        <sys:Int32 xmlns:sys="clr-namespace:System;assembly=mscorlib">1</sys:Int32>
+                        <sys:Int32 xmlns:sys="clr-namespace:System;assembly=mscorlib">2</sys:Int32>
+                        <sys:Int32 xmlns:sys="clr-namespace:System;assembly=mscorlib">3</sys:Int32>
+                    </ComboBox>
+                    <Button Content="创建任务" Command="{Binding CreateJobCommand}" Padding="12,5"/>
+                    <Button Content="删除所选" Command="{Binding DeleteJobCommand}"
+                            CommandParameter="{Binding SelectedItem, ElementName=Dg}" Padding="12,5" Margin="8,0,0,0"/>
+                </WrapPanel>
+                <TextBlock Text="提示：游戏不保存任务报酬，而是按「货物 × 距离 × 紧急度」实时计算。下表的「预估报酬」按真实存档中实测的单位费率换算，仅供参考。"
+                           Margin="0,8,0,0" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"/>
+                <TextBlock Text="{Binding Status}" Margin="0,4,0,0" Foreground="{StaticResource PrimaryBrush}" TextWrapping="Wrap"/>
             </StackPanel>
         </Border>
-        <DataGrid x:Name="Dg" ItemsSource="{Binding Items}" AutoGenerateColumns="False" IsReadOnly="False">
+
+        <!-- 任务列表 -->
+        <DataGrid x:Name="Dg" ItemsSource="{Binding Items}" AutoGenerateColumns="False" IsReadOnly="True"
+                  EnableRowVirtualization="True" VirtualizingPanel.IsVirtualizing="True"
+                  VirtualizingPanel.VirtualizationMode="Recycling">
             <DataGrid.Columns>
-                <DataGridTextColumn Header="标识" Binding="{Binding Unit.Id}" IsReadOnly="True" Width="1.5*"/>
-                <DataGridTextColumn Header="目标城市" Binding="{Binding TargetCity}" Width="*"/>
-                <DataGridTextColumn Header="货物" Binding="{Binding Cargo}" Width="*"/>
-                <DataGridTextColumn Header="公司车辆" Binding="{Binding Truck}" Width="*"/>
-                <DataGridTextColumn Header="距离(km)" Binding="{Binding DistanceKm}" Width="90"/>
-                <DataGridTextColumn Header="紧急度" Binding="{Binding Urgency}" Width="80"/>
-                <DataGridTextColumn Header="装载率" Binding="{Binding FillRatio, StringFormat=P0}" Width="90"/>
+                <DataGridTextColumn Header="收货公司" Binding="{Binding Target}" Width="135"/>
+                <DataGridTextColumn Header="城市" Binding="{Binding TargetCityName}" Width="82"/>
+                <DataGridTextColumn Header="货物" Binding="{Binding CargoName}" Width="108"/>
+                <DataGridTextColumn Header="公司车辆" Binding="{Binding Truck}" Width="132"/>
+                <DataGridTextColumn Header="距离(km)" Binding="{Binding DistanceKm}" Width="74"/>
+                <DataGridTextColumn Header="紧急度" Binding="{Binding Urgency}" Width="55"/>
+                <DataGridTextColumn Header="单位数" Binding="{Binding UnitsCount}" Width="58"/>
+                <DataGridTextColumn Header="预估报酬" Binding="{Binding EstimatedIncomeText}" Width="86"/>
+                <DataGridTextColumn Header="每公里报酬" Binding="{Binding EstimatedIncomePerKmText}" Width="96"/>
             </DataGrid.Columns>
         </DataGrid>
     </DockPanel>

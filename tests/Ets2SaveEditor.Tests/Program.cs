@@ -6,6 +6,9 @@ using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
 using Ets2SaveEditor.Core.Domain;
+using Ets2SaveEditor.Core.Domain.TypedUnits;
+using SaveCompany = Ets2SaveEditor.Core.Domain.TypedUnits.Company;
+using Ets2SaveEditor.Core.GameData;
 using Ets2SaveEditor.Core.Persistence;
 using Ets2SaveEditor.Core.Sii;
 using Ets2SaveEditor.ViewModels;
@@ -35,6 +38,8 @@ namespace Ets2SaveEditor.Tests
             failures += TestNewBsiiTypes();
             failures += TestAtomicSave();
             failures += TestStringStylePreserved();
+            failures += TestCityVisiting();
+            failures += TestCustomJobOffer();
             failures += TestRealSave();
 
             Console.WriteLine(failures == 0 ? "ALL TESTS PASSED" : $"{failures} TEST(S) FAILED");
@@ -56,7 +61,9 @@ namespace Ets2SaveEditor.Tests
                 "garage : _nameless.0002 {\n vehicles: 1\n vehicles[0]: null\n status: 3\n productivity: 0\n}\n" +
                 "vehicle : _nameless.0003 {\n engine_wear: &3e117d8d\n chassis_wear: 0\n fuel_relative: 1\n}\n" +
                 "trailer : _nameless.0005 {\n trailer_definition: trailer_def.scs.box.single_3.dryvan\n trailer_body_wear: 0\n}\n" +
-                "job_offer_data : _nameless.0004 {\n target: \"sanbuilders.london\"\n cargo: cargo.haulie\n company_truck: scania_s_2024e\n urgency: 0\n units_count: 1\n fill_ratio: 0\n}\n}\n";
+                "job_offer_data : _nameless.0004 {\n target: \"sanbuilders.london\"\n cargo: cargo.haulie\n company_truck: scania_s_2024e\n urgency: 0\n units_count: 1\n fill_ratio: 0\n}\n" +
+                "company : company.volatile.sanbuilders.london {\n permanent_data: company.permanent.sanbuilders\n job_offer: 1\n job_offer[0]: _nameless.0004\n cargo_offer_seeds: 1\n cargo_offer_seeds[0]: 1\n discovered: true\n state: 0\n}\n" +
+                "}\n";
 
             string dir = Path.Combine(Path.GetTempPath(), "ets2test");
             Directory.CreateDirectory(dir);
@@ -758,7 +765,7 @@ namespace Ets2SaveEditor.Tests
             sf.Load(path);
 
             var job = sf.GetFreightJobs()[0];
-            job.TargetCity = "new.target";
+            job.Target = "new.target";
             job.Truck = "scania_r_2024x";
             job.Cargo = "cargo.new";
 
@@ -907,6 +914,324 @@ namespace Ets2SaveEditor.Tests
             }
         }
 
+        /// <summary>
+        /// 城市访问（visited_cities）测试：
+        /// <list type="bullet">
+        ///   <item><description>未访问的城市能被写入 visited_cities 数组；</description></item>
+        ///   <item><description>重复添加会被拒绝；</description></item>
+        ///   <item><description>移除城市后数组元素数正确减少；</description></item>
+        ///   <item><description>保存后重新加载，新增城市仍在（往返一致）。</description></item>
+        /// </list>
+        /// </summary>
+        private static int TestCityVisiting()
+        {
+            int failures = 0;
+
+            string dir = Path.Combine(Path.GetTempPath(), "ets2test");
+            Directory.CreateDirectory(dir);
+            string path = Path.Combine(dir, "cities.sii");
+
+            File.WriteAllText(path,
+                "SiiNunit\n{\n" +
+                "economy : _nameless.0000 {\n" +
+                " experience_points: 100\n" +
+                " visited_cities: 2\n" +
+                " visited_cities[0]: london\n" +
+                " visited_cities[1]: berlin\n" +
+                "}\n}\n");
+
+            var sf = new SaveFile();
+            try
+            {
+                sf.Load(path);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("FAIL: city test save threw on load: " + ex.Message);
+                return failures + 1;
+            }
+
+            var economy = sf.GetEconomy();
+            if (economy == null)
+            {
+                Console.WriteLine("FAIL: economy unit not found");
+                return failures + 1;
+            }
+
+            int initialCount = economy.VisitedCities.Count;
+            bool initialOk = initialCount == 2;
+            Console.WriteLine($"[cities] initial={initialCount}");
+            if (!initialOk)
+            {
+                Console.WriteLine("FAIL: initial visited_cities count wrong: " + initialCount);
+                failures++;
+            }
+
+            // 添加一个未访问的城市。
+            bool added = economy.VisitCity("hamburg");
+            int afterAdd = economy.VisitedCities.Count;
+            bool addOk = added && afterAdd == 3 && economy.VisitedCities.Contains("hamburg");
+            Console.WriteLine($"[cities] added={added} count={afterAdd}");
+            if (!addOk)
+            {
+                Console.WriteLine("FAIL: VisitCity did not add the city");
+                failures++;
+            }
+
+            // 重复添加应被拒绝。
+            bool duplicate = economy.VisitCity("hamburg");
+            int afterDuplicate = economy.VisitedCities.Count;
+            bool dupOk = !duplicate && afterDuplicate == 3;
+            Console.WriteLine($"[cities] duplicate={duplicate} count={afterDuplicate}");
+            if (!dupOk)
+            {
+                Console.WriteLine("FAIL: duplicate city was added twice");
+                failures++;
+            }
+
+            // 移除城市。
+            bool removed = economy.UnvisitCity("berlin");
+            int afterRemove = economy.VisitedCities.Count;
+            bool removeOk = removed && afterRemove == 2 && !economy.VisitedCities.Contains("berlin");
+            Console.WriteLine($"[cities] removed={removed} count={afterRemove}");
+            if (!removeOk)
+            {
+                Console.WriteLine("FAIL: UnvisitCity did not remove the city");
+                failures++;
+            }
+
+            // 保存并重新加载：新增的城市必须还在。
+            try
+            {
+                sf.Save(path, false);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("FAIL: city test save threw on save: " + ex.Message);
+                return failures + 1;
+            }
+
+            var reloaded = new SaveFile();
+            reloaded.Load(path);
+            var economy2 = reloaded.GetEconomy();
+            bool persisted = economy2 != null &&
+                             economy2.VisitedCities.Count == 2 &&
+                             economy2.VisitedCities.Contains("hamburg") &&
+                             economy2.VisitedCities.Contains("london");
+            Console.WriteLine($"[cities] persisted={persisted}");
+            if (!persisted)
+            {
+                Console.WriteLine("FAIL: visited city did not survive save/reload");
+                failures++;
+            }
+
+            // 内置城市目录应覆盖真实存档中出现的城市。
+            bool catalogueOk = CityCatalogue.Find("london") != null &&
+                               CityCatalogue.Find("hamburg") != null &&
+                               CityCatalogue.Count > 300;
+            Console.WriteLine($"[cities] catalogue={CityCatalogue.Count} ok={catalogueOk}");
+            if (!catalogueOk)
+            {
+                Console.WriteLine("FAIL: city catalogue incomplete");
+                failures++;
+            }
+
+            return failures;
+        }
+
+        // ------------------------------------------------------------------
+        // 自定义货运任务：报酬估算 + 与公司的关联。
+        // ------------------------------------------------------------------
+
+        /// <summary>
+        /// 验证 <c>job_offer_data</c> 的创建流程：
+        /// 任务必须注册到 company 的 job_offer 数组，游戏才会在货运市场显示它；
+        /// 同时验证报酬估算与实测费率一致。
+        /// </summary>
+        private static int TestCustomJobOffer()
+        {
+            int failures = 0;
+
+            string dir = Path.Combine(Path.GetTempPath(), "ets2test");
+            Directory.CreateDirectory(dir);
+            string path = Path.Combine(dir, "customjob.sii");
+
+            File.WriteAllText(path,
+                "SiiNunit\n{\n" +
+                "company : company.volatile.stokes.erfurt {\n" +
+                " permanent_data: company.permanent.stokes\n" +
+                " job_offer: 1\n" +
+                " job_offer[0]: _nameless.0001\n" +
+                " cargo_offer_seeds: 2\n" +
+                " cargo_offer_seeds[0]: 1\n" +
+                " cargo_offer_seeds[1]: 2\n" +
+                " discovered: true\n" +
+                " state: 0\n" +
+                "}\n" +
+                "job_offer_data : _nameless.0001 {\n" +
+                " target: \"stokes.erfurt\"\n" +
+                " expiration_time: 0\n" +
+                " urgency: 0\n" +
+                " shortest_distance_km: 124\n" +
+                " ferry_time: 0\n" +
+                " ferry_price: 0\n" +
+                " cargo: cargo.haulie\n" +
+                " company_truck: scania_s_2024e\n" +
+                " trailer_variant: trailer.scs_lowbed_3\n" +
+                " trailer_definition: trailer_def.scs.lowbed.single_3.short\n" +
+                " units_count: 4\n" +
+                " fill_ratio: 1\n" +
+                " trailer_place: 0\n" +
+                "}\n" +
+                "}\n");
+
+            var sf = new SaveFile();
+            try
+            {
+                sf.Load(path);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("FAIL: custom job save threw on load: " + ex.Message);
+                return failures + 1;
+            }
+
+            var company = SaveCompany.AllFromDocument(sf.Document).FirstOrDefault();
+            if (company == null)
+            {
+                Console.WriteLine("FAIL: no company unit found in the save");
+                return failures + 1;
+            }
+
+            bool companyOk = company != null &&
+                             company.Brand == "stokes" &&
+                             company.CityToken == "erfurt" &&
+                             company.ShortReference == "stokes.erfurt" &&
+                             company.JobOfferCount == 1;
+            Console.WriteLine($"[customjob] companyOk={companyOk} ref={(company == null ? "<null>" : company.ShortReference)}");
+            if (!companyOk)
+            {
+                Console.WriteLine("FAIL: company could not be read from the save");
+                failures++;
+            }
+
+            var existing = sf.GetFreightJobs()[0];
+            bool targetParsed = existing.TargetCity == "erfurt" && existing.TargetBrand == "stokes";
+            Console.WriteLine($"[customjob] targetParsed={targetParsed} city={existing.TargetCity} brand={existing.TargetBrand}");
+            if (!targetParsed)
+            {
+                Console.WriteLine("FAIL: target reference was not split into brand and city");
+                failures++;
+            }
+
+            // 新建任务：必须同时创建单元并注册到公司。
+            int offersBefore = sf.GetFreightJobs().Count;
+            int companyOffersBefore = company!.JobOfferCount;
+
+            var created = JobOffer.CreateAndRegister(
+                sf.Document, company, "cargo.haulie", "scania_s_2024e", 300, 24, 1);
+            if (created == null)
+            {
+                Console.WriteLine("FAIL: CreateAndRegister returned null");
+                return failures + 1;
+            }
+
+            bool createdOk = created != null &&
+                            sf.GetFreightJobs().Count == offersBefore + 1 &&
+                            company.JobOfferCount == companyOffersBefore + 1 &&
+                            company.JobOfferIds.Contains(created.Unit.Id) &&
+                            created.Target == "stokes.erfurt" &&
+                            created.DistanceKm == 300 &&
+                            created.UnitsCount == 24 &&
+                            created.Urgency == 1;
+            Console.WriteLine($"[customjob] createdOk={createdOk} offers={company.JobOfferCount}");
+            if (!createdOk)
+            {
+                Console.WriteLine("FAIL: new job offer was not registered with the company");
+                failures++;
+            }
+
+            // 重复注册同一任务应被拒绝。
+            bool duplicate = company!.AddJobOffer(created!.Unit.Id);
+            bool dupOk = !duplicate && company.JobOfferCount == companyOffersBefore + 1;
+            Console.WriteLine($"[customjob] duplicateRejected={dupOk}");
+            if (!dupOk)
+            {
+                Console.WriteLine("FAIL: duplicate job offer registration was accepted");
+                failures++;
+            }
+
+            // 报酬估算：与真实存档中实测的费率一致。
+            // 真实存档记录：cargo.gummy_bears，144 km，33 单位，收入 4791 €，
+            // 对应费率 4791 / (144 × 33) = 1.0082 €/单位/km。
+            long estimate = JobIncomeEstimator.Estimate("cargo.gummy_bears", 144, 33, 0, 1.0);
+            bool estimateOk = Math.Abs(estimate - 4791L) <= 40L;
+            Console.WriteLine($"[customjob] estimate={estimate} ok={estimateOk}");
+            if (!estimateOk)
+            {
+                Console.WriteLine("FAIL: income estimate does not match the recorded revenue");
+                failures++;
+            }
+
+            // 未知货物使用默认费率；紧急度倍率必须大于 1。
+            double unknownRate = JobIncomeEstimator.RateOf("cargo.does_not_exist");
+            bool defaultOk = Math.Abs(unknownRate - CargoCatalogue.DefaultRate) < 0.0001;
+            bool urgencyOk = JobIncomeEstimator.UrgencyFactor(0) < JobIncomeEstimator.UrgencyFactor(2);
+            Console.WriteLine($"[customjob] defaultRate={unknownRate} defaultOk={defaultOk} urgencyOk={urgencyOk}");
+            if (!defaultOk)
+            {
+                Console.WriteLine("FAIL: unknown cargo does not use the default rate");
+                failures++;
+            }
+            if (!urgencyOk)
+            {
+                Console.WriteLine("FAIL: urgency does not increase the income");
+                failures++;
+            }
+
+            // 保存后重新加载：任务与公司的关联必须还在。
+            try
+            {
+                sf.Save(path, false);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("FAIL: custom job save threw on save: " + ex.Message);
+                return failures + 1;
+            }
+
+            var reloaded = new SaveFile();
+            reloaded.Load(path);
+            var company2 = SaveCompany.AllFromDocument(reloaded.Document).FirstOrDefault();
+            var job2 = reloaded.GetFreightJobs().FirstOrDefault(j => j.Unit.Id == created.Unit.Id);
+            bool persisted = company2 != null &&
+                             company2.JobOfferCount == companyOffersBefore + 1 &&
+                             job2 != null &&
+                             company2.JobOfferIds.Contains(job2.Unit.Id);
+            Console.WriteLine($"[customjob] persisted={persisted}");
+            if (!persisted)
+            {
+                Console.WriteLine("FAIL: job offer registration did not survive save/reload");
+                failures++;
+            }
+
+            // 删除任务：必须同时注销公司与单元。
+            bool removed = job2 != null && job2.Remove();
+            var company3 = SaveCompany.AllFromDocument(reloaded.Document).FirstOrDefault();
+            bool removeOk = removed &&
+                            company3 != null &&
+                            company3.JobOfferCount == companyOffersBefore &&
+                            !reloaded.GetFreightJobs().Any(j => j.Unit.Id == created.Unit.Id);
+            Console.WriteLine($"[customjob] removeOk={removeOk}");
+            if (!removeOk)
+            {
+                Console.WriteLine("FAIL: job offer was not unregistered from the company");
+                failures++;
+            }
+
+            return failures;
+        }
+
         // ------------------------------------------------------------------
         // 真实存档集成测试（可选，文件不存在时跳过）。
         // ------------------------------------------------------------------
@@ -950,6 +1275,108 @@ namespace Ets2SaveEditor.Tests
             if (!formatOk) { Console.WriteLine("FAIL: real save format not detected"); failures++; }
             if (!moneyOk) { Console.WriteLine("FAIL: real money_account wrong: " + money); failures++; }
             if (!xpOk) { Console.WriteLine("FAIL: real experience_points wrong: " + xp); failures++; }
+
+            failures += TestRealSaveArrays(sf);
+
+            return failures;
+        }
+
+        /// <summary>
+        /// 校验真实存档中的数组字段被正确解析。
+        /// <para>
+        /// 空数组（<c>name: 0</c> 且没有 name[i] 元素行）与普通整数属性在文本
+        /// 上无法区分，必须依赖存档自带的结构定义（schema）。若解析错误，
+        /// 修理挂车等操作会把 <c>wheels_wear: 0</c> 写成 <c>wheels_wear: 1</c>，
+        /// 从而损坏存档。
+        /// </para>
+        /// </summary>
+        private static int TestRealSaveArrays(SaveFile sf)
+        {
+            int failures = 0;
+
+            var doc = sf.Document;
+            if (doc == null)
+            {
+                Console.WriteLine("FAIL: real save document is null");
+                return failures + 1;
+            }
+
+            // economy.visited_cities：真实存档中为 332 项。
+            var economy = doc.GetFirstByType("economy");
+            int visitedCities = economy != null ? economy.GetArrayItems("visited_cities").Count : -1;
+            bool visitedOk = visitedCities == 332;
+            Console.WriteLine($"[realsave] visited_cities={visitedCities}");
+            if (!visitedOk)
+            {
+                Console.WriteLine("FAIL: visited_cities count wrong: " + visitedCities);
+                failures++;
+            }
+
+            // garage：非 truckersmp 的车库挂车数组为空（0 项），不是 1 项。
+            var garage = doc.GetUnitById("garage.calais");
+            int garageTrailers = garage != null ? garage.GetArrayItems("trailers").Count : -1;
+            bool garageOk = garageTrailers == 0;
+            Console.WriteLine($"[realsave] garage.calais.trailers={garageTrailers}");
+            if (!garageOk)
+            {
+                Console.WriteLine("FAIL: empty garage trailer array wrong: " + garageTrailers);
+                failures++;
+            }
+
+            // garage：truckersmp 有 6 辆挂车。
+            var garage2 = doc.GetUnitById("garage.truckersmp");
+            int garage2Trailers = garage2 != null ? garage2.GetArrayItems("trailers").Count : -1;
+            bool garage2Ok = garage2Trailers == 6;
+            Console.WriteLine($"[realsave] garage.truckersmp.trailers={garage2Trailers}");
+            if (!garage2Ok)
+            {
+                Console.WriteLine("FAIL: garage trailer array wrong: " + garage2Trailers);
+                failures++;
+            }
+
+            // vehicle.wheels_wear：4 个轮子。
+            var vehicles = doc.GetUnitsByType("vehicle");
+            int wheelCount = vehicles.Count > 0 ? vehicles[0].GetArrayItems("wheels_wear").Count : -1;
+            bool wheelsOk = wheelCount == 4;
+            Console.WriteLine($"[realsave] vehicle.wheels_wear={wheelCount}");
+            if (!wheelsOk)
+            {
+                Console.WriteLine("FAIL: vehicle wheel wear array wrong: " + wheelCount);
+                failures++;
+            }
+
+            // trailer.wheels_wear：真实存档中为空数组（0 项）。
+            var trailers = doc.GetUnitsByType("trailer");
+            int trailerWheels = trailers.Count > 0 ? trailers[0].GetArrayItems("wheels_wear").Count : -1;
+            bool trailerWheelsOk = trailerWheels == 0;
+            Console.WriteLine($"[realsave] trailer.wheels_wear={trailerWheels}");
+            if (!trailerWheelsOk)
+            {
+                Console.WriteLine("FAIL: trailer wheel wear array wrong: " + trailerWheels);
+                failures++;
+            }
+
+            // job_offer_data.trailer_place：空数组。
+            var offers = doc.GetUnitsByType("job_offer_data");
+            int places = offers.Count > 0 ? offers[0].GetArrayItems("trailer_place").Count : -1;
+            bool placesOk = places == 0;
+            Console.WriteLine($"[realsave] job_offer_data.trailer_place={places}");
+            if (!placesOk)
+            {
+                Console.WriteLine("FAIL: job offer trailer place array wrong: " + places);
+                failures++;
+            }
+
+            // 往返必须字节级一致：数组头被正确识别后仍要原样写回。
+            string original = SiiFormatDetector.Decode(File.ReadAllBytes(RealSavePath), SiiFormat.Encrypted);
+            string roundtrip = SiiSerializer.Serialize(doc);
+            bool exact = original == roundtrip;
+            Console.WriteLine($"[realsave] roundtripExact={exact}");
+            if (!exact)
+            {
+                Console.WriteLine("FAIL: real save round-trip is not byte identical");
+                failures++;
+            }
 
             return failures;
         }

@@ -1,0 +1,29 @@
+<UserControl x:Class="Ets2SaveEditor.Views.CitiesView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             mc:Ignorable="d" d:DesignHeight="420" d:DesignWidth="600">
+    <DockPanel>
+        <Border DockPanel.Dock="Top" Style="{StaticResource CardStyle}" Margin="0,0,0,8">
+            <StackPanel>
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Text="搜索" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                    <TextBox Text="{Binding Filter, UpdateSourceTrigger=PropertyChanged}" Width="220" VerticalAlignment="Center" Margin="0,0,12,0"/>
+                    <CheckBox Content="只看未访问" IsChecked="{Binding ShowOnlyUnvisited}" VerticalAlignment="Center" Margin="0,0,12,0"/>
+                    <Button Content="解锁选中城市" Command="{Binding VisitCommand}" CommandParameter="{Binding SelectedItem, ElementName=Dg}" Margin="0,0,8,0"/>
+                    <Button Content="解锁当前列表全部" Command="{Binding VisitAllCommand}" Margin="0,0,8,0"/>
+                    <Button Content="取消访问" Command="{Binding UnvisitCommand}" CommandParameter="{Binding SelectedItem, ElementName=Dg}"/>
+                </StackPanel>
+                <TextBlock Text="说明：解锁城市即把城市标识写入 economy.visited_cities，游戏便可在货运市场与任务列表中选到该城市。" Margin="0,8,0,0" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"/>
+            </StackPanel>
+        </Border>
+        <DataGrid x:Name="Dg" ItemsSource="{Binding Items}" AutoGenerateColumns="False" IsReadOnly="True">
+            <DataGrid.Columns>
+                <DataGridTextColumn Header="城市" Binding="{Binding Name}" Width="180"/>
+                <DataGridTextColumn Header="标识" Binding="{Binding Token}" Width="180"/>
+                <DataGridCheckBoxColumn Header="已访问" Binding="{Binding Visited}" Width="90"/>
+            </DataGrid.Columns>
+        </DataGrid>
+    </DockPanel>
+</UserControl>

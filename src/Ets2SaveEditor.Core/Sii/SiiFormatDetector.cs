@@ -124,19 +124,37 @@ namespace Ets2SaveEditor.Core.Sii
         /// <exception cref="SiiFormatException">当格式不支持或解码失败时抛出。</exception>
         public static string Decode(byte[] raw, SiiFormat format)
         {
+            return Decode(raw, format, out _);
+        }
+
+        /// <summary>
+        /// According to the format, decodes the raw bytes into plaintext SII
+        /// text and reports the schema of the file (which attributes of which
+        /// unit type are arrays).
+        /// <para>
+        /// The schema is only available for binary (BSII) payloads, which carry
+        /// the structure definitions. For plaintext files an empty schema is
+        /// returned and the parser falls back to its heuristics.
+        /// </para>
+        /// </summary>
+        /// <exception cref="SiiFormatException">当格式不支持或解码失败时抛出。</exception>
+        public static string Decode(byte[] raw, SiiFormat format, out SiiSchema schema)
+        {
+            schema = SiiSchema.Empty;
+
             switch (format)
             {
                 case SiiFormat.Plaintext:
-                    return StripBom(DecodePayload(raw));
+                    return StripBom(DecodePayload(raw, ref schema));
 
                 case SiiFormat.Zlib:
-                    return StripBom(DecodePayload(InflateBytes(raw)));
+                    return StripBom(DecodePayload(InflateBytes(raw), ref schema));
 
                 case SiiFormat.Encrypted:
-                    return StripBom(DecodePayload(DecodeEncryptedBytes(raw)));
+                    return StripBom(DecodePayload(DecodeEncryptedBytes(raw), ref schema));
 
                 case SiiFormat.Binary:
-                    return StripBom(DecodePayload(raw));
+                    return StripBom(DecodePayload(raw, ref schema));
 
                 default:
                     throw new SiiFormatException(
@@ -148,7 +166,7 @@ namespace Ets2SaveEditor.Core.Sii
         /// 把解密/解压后的载荷转换成 SII 文本：二进制 <c>BSII</c> 载荷走
         /// <see cref="SiiBsiiDecoder"/>，其余按 UTF-8 文本处理。
         /// </summary>
-        private static string DecodePayload(byte[] payload)
+        private static string DecodePayload(byte[] payload, ref SiiSchema schema)
         {
             if (payload == null)
             {
@@ -157,7 +175,7 @@ namespace Ets2SaveEditor.Core.Sii
 
             if (IsBsii(payload))
             {
-                return SiiBsiiDecoder.Decode(payload);
+                return SiiBsiiDecoder.Decode(payload, out schema);
             }
 
             return Encoding.UTF8.GetString(payload);

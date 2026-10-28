@@ -18,6 +18,7 @@ namespace Ets2SaveEditor.Core.Common
         public const string TrailerType = "trailer";
         public const string JobOfferType = "job_offer_data";
         public const string JobInfoType = "job_info";
+        public const string CompanyType = "company";
         public const string ProfitLogType = "profit_log";
         public const string DeliveryLogType = "delivery_log_entry";
         public const string BankLoanType = "bank_loan";
