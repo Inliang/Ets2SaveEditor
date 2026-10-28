@@ -113,7 +113,7 @@ Ets2SaveEditor/
 
 ```text
 # 1. 克隆仓库
-git clone https://github.com/<your-org>/Ets2SaveEditor.git
+git clone https://github.com/Inliang/Ets2SaveEditor.git
 cd Ets2SaveEditor
 
 # 2. 还原依赖并构建整个解决方案
