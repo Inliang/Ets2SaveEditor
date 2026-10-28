@@ -1,0 +1,51 @@
+name: Build Windows EXE
+
+# 在以下情况下自动构建可执行的 Windows EXE：
+#   1. 推送到 main 分支（每次提交都构建，产物作为 Artifact 提供下载）
+#   2. 推送形如 v1.0.0 的 tag（自动创建 GitHub Release 并附上 EXE）
+#   3. 在 Actions 页面手动触发（workflow_dispatch）
+on:
+  push:
+    branches: [ main ]
+    tags: [ 'v*' ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    # WPF 依赖 Windows 桌面运行时，必须在 Windows runner 上构建
+    runs-on: windows-latest
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 .NET 8 SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: 发布为自包含单文件 EXE（win-x64）
+        # --self-contained：内嵌 .NET 运行时，用户无需预装 .NET
+        # PublishSingleFile：打包为单个 Ets2SaveEditor.exe，便于分发
+        run: >
+          dotnet publish src/Ets2SaveEditor/Ets2SaveEditor.csproj
+          -c Release -r win-x64 --self-contained
+          -p:PublishSingleFile=true
+          -p:IncludeNativeLibrariesForSelfExtract=true
+          -o publish
+
+      - name: 上传构建产物（Artifact）
+        uses: actions/upload-artifact@v4
+        with:
+          name: Ets2SaveEditor-win-x64
+          path: publish/Ets2SaveEditor.exe
+          if-no-files-found: error
+
+      - name: 创建 GitHub Release 并附上 EXE
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: publish/Ets2SaveEditor.exe
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
