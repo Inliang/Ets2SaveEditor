@@ -1,7 +1,6 @@
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
-using Ets2SaveEditor.Core.Persistence;
 using Ets2SaveEditor.ViewModels;
 
 namespace Ets2SaveEditor
@@ -29,29 +28,28 @@ namespace Ets2SaveEditor
                             "SII 解析采用无损透传，未识别字段原样保留。", "关于 / 免责声明");
 
         private void BtnRefresh_Click(object sender, RoutedEventArgs e) => VM.RefreshSlotsCommand.Execute(null);
+        private void BtnBrowseFile_Click(object sender, RoutedEventArgs e) => VM.OpenFileCommand.Execute(null);
+        private void BtnOpenFolder_Click(object sender, RoutedEventArgs e) => VM.OpenSlotFolderCommand.Execute(null);
+        private void BtnLoadSelected_Click(object sender, RoutedEventArgs e) => VM.LoadSelectedSlotCommand.Execute(null);
 
-        private void BtnLoadSave_Click(object sender, RoutedEventArgs e) => VM.OpenFileCommand.Execute(null);
-
-        private void BtnLoadSelected_Click(object sender, RoutedEventArgs e)
+        /// <summary>切换游戏（欧卡 2 / 美卡 1）后重新筛选档案列表。</summary>
+        private void RbGame_Checked(object sender, RoutedEventArgs e)
         {
-            if (LbFiles.SelectedItem is string file)
-                VM.LoadFile(file);
-            else
-                MessageBox.Show("请先在下方列表中选择一个 .sii 文件，再点击「加载选中文件」。", "提示");
-        }
-
-        private void LbSlots_SelectionChanged(object sender, SelectionChangedEventArgs e)
-        {
-            if (LbSlots.SelectedItem is SaveSlot slot)
+            // IsChecked="True" 会在 InitializeComponent 期间触发本事件，
+            // 此时 DataContext 尚未赋值，必须先判空。
+            if (DataContext is not MainViewModel vm) return;
+            if (sender is RadioButton rb && rb.Tag is string game && rb.IsChecked == true)
             {
-                LbFiles.ItemsSource = new SaveLocationFinder().ListSiiFiles(slot.FullPath);
+                vm.SelectedGame = game;
             }
         }
 
-        private void LbFiles_MouseDoubleClick(object sender, MouseButtonEventArgs e)
+        private void LbSlotFiles_MouseDoubleClick(object sender, MouseButtonEventArgs e)
         {
-            if (LbFiles.SelectedItem is string file)
-                VM.LoadFile(file);
+            if (LbSlotFiles.SelectedItem is SlotFileItem file)
+            {
+                VM.LoadFile(file.FullPath);
+            }
         }
     }
 }

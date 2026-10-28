@@ -29,6 +29,12 @@ namespace Ets2SaveEditor.Core.Persistence
         /// <summary>Human-friendly label for list boxes.</summary>
         public string Display => $"[{Game}] {ProfileId} / {SlotName}" + (IsSteam ? " (Steam)" : "");
 
+        /// <summary>
+        /// 存档槽名称。列表/下拉框中直接显示存档槽名即可，
+        /// 因为同一个档案下的存档槽名唯一。
+        /// </summary>
+        public override string ToString() => SlotName;
+
         public SaveSlot()
         {
             Game = string.Empty;

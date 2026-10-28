@@ -2,13 +2,13 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:views="clr-namespace:Ets2SaveEditor.Views"
-        Title="欧卡2 存档修改器" Height="700" Width="1060"
+        Title="欧卡2 存档修改器" Height="780" Width="1240" MinWidth="1040" MinHeight="660"
         Icon="pack://application:,,,/Ets2SaveEditor;component/Assets/appicon.ico">
     <DockPanel>
         <Menu DockPanel.Dock="Top">
             <MenuItem Header="文件(_F)">
                 <MenuItem x:Name="MiOpenFile" Header="打开文件..." Click="MiOpenFile_Click"/>
-                <MenuItem x:Name="MiOpenFolder" Header="打开文件夹..." Click="MiOpenFolder_Click"/>
+                <MenuItem x:Name="MiOpenFolder" Header="打开存档文件夹并加载..." Click="MiOpenFolder_Click"/>
                 <MenuItem x:Name="MiSave" Header="保存(_S)" Click="MiSave_Click"/>
                 <MenuItem x:Name="MiSaveAs" Header="另存为..." Click="MiSaveAs_Click"/>
                 <Separator/>
@@ -27,49 +27,12 @@
 
         <Grid>
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="260"/>
                 <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="320"/>
             </Grid.ColumnDefinitions>
 
-            <!-- 左侧：加载 / 存档槽 / 文件列表 -->
-            <Border Grid.Column="0" Style="{StaticResource CardStyle}" Margin="8" Padding="10">
-                <Grid>
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="2*"/>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="2*"/>
-                        <RowDefinition Height="Auto"/>
-                    </Grid.RowDefinitions>
-
-                    <Button Grid.Row="0" x:Name="BtnLoadSave" Content="加载存档（选择 .sii 文件）"
-                            Margin="0,0,0,6" Click="BtnLoadSave_Click"
-                            Background="{StaticResource AccentBrush}" Foreground="White" FontWeight="Bold"/>
-                    <Button Grid.Row="1" x:Name="BtnOpenFolder" Content="打开存档文件夹..."
-                            Margin="0,0,0,6" Click="MiOpenFolder_Click"/>
-                    <Button Grid.Row="2" x:Name="BtnRefresh" Content="刷新存档列表"
-                            Margin="0,0,0,8" Click="BtnRefresh_Click"/>
-
-                    <TextBlock Grid.Row="3" Text="存档槽（自动扫描 文档 / Steam）"
-                               FontWeight="Bold" Foreground="{StaticResource PrimaryBrush}" Margin="0,0,0,4"/>
-                    <ListBox Grid.Row="4" x:Name="LbSlots" ItemsSource="{Binding SaveSlots}"
-                             DisplayMemberPath="Display"
-                             SelectionChanged="LbSlots_SelectionChanged"/>
-
-                    <TextBlock Grid.Row="5" Text="存档文件 (.sii) — 双击加载，或选中后点「加载选中文件」"
-                               FontWeight="Bold" Foreground="{StaticResource PrimaryBrush}" Margin="6,6,0,4"/>
-                    <ListBox Grid.Row="6" x:Name="LbFiles" MouseDoubleClick="LbFiles_MouseDoubleClick"/>
-
-                    <Button Grid.Row="7" x:Name="BtnLoadSelected" Content="加载选中文件"
-                            Margin="0,6,0,0" Click="BtnLoadSelected_Click"/>
-                </Grid>
-            </Border>
-
-            <!-- 右侧：功能页签 -->
-            <TabControl Grid.Column="1" Margin="0,8,8,8" Background="{StaticResource BgBrush}" BorderThickness="0">
+            <!-- 左侧：功能页签（占满剩余宽度，便于查看表格） -->
+            <TabControl Grid.Column="0" Margin="8,8,4,8" Background="{StaticResource BgBrush}" BorderThickness="0">
                 <TabItem Header="档案">
                     <Border Style="{StaticResource CardStyle}" Margin="6">
                         <views:ProfileView DataContext="{Binding Profile}"/>
@@ -106,6 +69,116 @@
                     </Border>
                 </TabItem>
             </TabControl>
+
+            <!-- 右侧：档案与存档（对应参考工具的右侧栏） -->
+            <Border Grid.Column="1" Style="{StaticResource CardStyle}" Margin="4,8,8,8" Padding="12">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                    <StackPanel>
+
+                        <!-- 游戏选择 -->
+                        <TextBlock Text="游戏" Style="{StaticResource PanelLabelStyle}" Margin="0,0,0,4"/>
+                        <Grid Margin="0,0,0,12">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="8"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <RadioButton Grid.Column="0" x:Name="RbEts2" GroupName="Game" Tag="ETS2"
+                                         Content="欧卡 2" IsChecked="True"
+                                         Style="{StaticResource GameButtonStyle}" Checked="RbGame_Checked"/>
+                            <RadioButton Grid.Column="2" x:Name="RbAts" GroupName="Game" Tag="ATS"
+                                         Content="美卡 1"
+                                         Style="{StaticResource GameButtonStyle}" Checked="RbGame_Checked"/>
+                        </Grid>
+
+                        <!-- 档案与存档 -->
+                        <GroupBox Header="档案与存档">
+                            <StackPanel>
+                                <!-- 头像 + 当前档案 -->
+                                <Grid Margin="0,2,0,10">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Border Grid.Column="0" Width="56" Height="56"
+                                            BorderBrush="{StaticResource BorderBrush}" BorderThickness="1">
+                                        <Image Source="{StaticResource AvatarImage}" Stretch="Uniform"/>
+                                    </Border>
+                                    <StackPanel Grid.Column="1" Margin="10,0,0,0" VerticalAlignment="Center">
+                                        <TextBlock Text="当前档案" Style="{StaticResource PanelLabelStyle}"/>
+                                        <TextBlock Text="{Binding ProfileDisplay, Mode=OneWay}"
+                                                   FontWeight="Bold" Foreground="{StaticResource PrimaryBrush}"
+                                                   TextTrimming="CharacterEllipsis"
+                                                   ToolTip="{Binding SelectedProfile.ProfileId}"/>
+                                        <TextBlock Text="{Binding SelectedProfile.ProfileId, Mode=OneWay}" FontSize="11"
+                                                   Foreground="{StaticResource MutedBrush}"
+                                                   TextTrimming="CharacterEllipsis"/>
+                                        <TextBlock Margin="0,4,0,0" TextTrimming="CharacterEllipsis">
+                                            <Run Text="存档槽：" Foreground="{StaticResource MutedBrush}" FontSize="12"/>
+                                            <Run Text="{Binding SlotDisplay, Mode=OneWay}" Foreground="{StaticResource PrimaryBrush}" FontWeight="Bold"/>
+                                        </TextBlock>
+                                    </StackPanel>
+                                </Grid>
+
+                                <!-- 档案选择 -->
+                                <Grid Margin="0,0,0,8">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <ComboBox Grid.Column="0" ItemsSource="{Binding Profiles}"
+                                              SelectedItem="{Binding SelectedProfile}" DisplayMemberPath="Display"/>
+                                    <Button Grid.Column="1" Content="刷新" Padding="12,6" MinWidth="54" Margin="6,0,0,0"
+                                            Click="BtnRefresh_Click"/>
+                                </Grid>
+
+                                <!-- 存档槽选择 -->
+                                <ComboBox ItemsSource="{Binding Slots}" SelectedItem="{Binding SelectedSlot}"
+                                          DisplayMemberPath="SlotName" Margin="0,0,0,8"/>
+
+                                <!-- 备份开关 -->
+                                <CheckBox Content="保存前自动备份" IsChecked="{Binding Settings.AutoBackup, Mode=TwoWay}"
+                                          Margin="0,0,0,8"/>
+
+                                <!-- 手动入口 -->
+                                <Grid Margin="0,0,0,8">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Button Grid.Column="0" Content="选择 .sii 文件…" Padding="6,6"
+                                            Click="BtnBrowseFile_Click"/>
+                                    <Button Grid.Column="1" Content="打开文件夹…" Padding="6,6" Margin="6,0,0,0"
+                                            Click="BtnOpenFolder_Click"/>
+                                </Grid>
+
+                                <!-- 主操作 -->
+                                <Button Content="加载存档" FontSize="16" Padding="0,13"
+                                        Background="{StaticResource PrimaryBrush}"
+                                        Click="BtnLoadSelected_Click"/>
+
+                                <!-- 存档内文件 -->
+                                <TextBlock Text="存档内文件" Style="{StaticResource PanelLabelStyle}" Margin="0,12,0,4"/>
+                                <ListBox x:Name="LbSlotFiles" ItemsSource="{Binding SlotFiles}"
+                                         Height="92" FontSize="12"
+                                         MouseDoubleClick="LbSlotFiles_MouseDoubleClick"/>
+                            </StackPanel>
+                        </GroupBox>
+
+                        <!-- 存档信息 -->
+                        <GroupBox Header="存档信息" Margin="0,12,0,0">
+                            <StackPanel>
+                                <TextBlock Text="已加载文件" Style="{StaticResource PanelLabelStyle}"/>
+                                <TextBlock Text="{Binding LoadedFileName}" FontWeight="Bold"
+                                           Foreground="{StaticResource PrimaryBrush}" TextWrapping="Wrap"/>
+                                <TextBlock Text="{Binding LoadedSummary}" Margin="0,6,0,0"
+                                           Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" LineHeight="20"/>
+                            </StackPanel>
+                        </GroupBox>
+
+                    </StackPanel>
+                </ScrollViewer>
+            </Border>
         </Grid>
     </DockPanel>
 </Window>

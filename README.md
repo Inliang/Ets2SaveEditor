@@ -32,7 +32,7 @@ Ets2SaveEditor 会自动识别上述格式：`ScsC` → AES-256-CBC 解密 → z
 | 分类 | 功能 | 实现状态 | 说明 |
 | --- | --- | --- | --- |
 | **存档管理** | 自定义 / 浏览存档路径 | ✅ 已实现 | 支持手动指定任意位置的存档目录 |
-| | 自动探测本地与 Steam 存档 | ✅ 已实现 | 读取文档目录与 Steam 注册表项，列出存档槽 |
+| | 自动探测本地与 Steam 存档 | ✅ 已实现 | 右侧「档案与存档」面板按 **游戏 → 档案 → 存档槽** 三级下拉选择 |
 | | 打开存档 / 保存 / 另存为 | ✅ 已实现 | 保存写回**明文 SII**；加密源文件**强制备份**为 `.bak.<时间戳>` |
 | **玩家档案** | 修改账户金钱 | ✅ 已实现 | 调整 `bank.money_account` |
 | | 修改玩家经验 / 等级 | ✅ 已实现 | 经验值 → 自动推导等级（内置 XP 表） |
@@ -99,9 +99,10 @@ Ets2SaveEditor/
 │   │   └── Persistence/                # 存档位置探测 / 备份服务
 │   └── Ets2SaveEditor/                 # WPF 应用（net8.0-windows，MVVM）
 │       ├── App.xaml(.cs)               # 应用入口 + 全局异常处理
-│       ├── MainWindow.xaml(.cs)        # 菜单 / 存档槽列表 / 7 标签页 / 状态栏
+│       ├── MainWindow.xaml(.cs)        # 菜单 / 右侧「档案与存档」面板 / 7 标签页 / 状态栏
 │       ├── ViewModels/                 # Main / Profile / Garages / Truck / Trailer
 │       │                               #   / FreightMarket / Cargo / Settings
+│       │                               #   + SaveProfileItem（档案分组、友好档案名）
 │       ├── Views/                      # 对应 7 个标签页的 XAML 视图
 │       ├── Services/DialogService.cs   # 文件/文件夹选择、消息框
 │       └── Converters/WearToColorConverter.cs  # 磨损 → 颜色画刷

@@ -14,7 +14,7 @@
         </Border>
         <DataGrid x:Name="Dg" ItemsSource="{Binding Items}" AutoGenerateColumns="False" IsReadOnly="False">
             <DataGrid.Columns>
-                <DataGridTextColumn Header="标识" Binding="{Binding Unit.Id}" IsReadOnly="True" Width="*"/>
+                <DataGridTextColumn Header="标识" Binding="{Binding Unit.Id}" IsReadOnly="True" Width="2*"/>
                 <DataGridTextColumn Header="城市" Binding="{Binding City}" IsReadOnly="True" Width="*"/>
                 <DataGridTextColumn Header="状态" Binding="{Binding Status}" Width="80"/>
                 <DataGridTextColumn Header="车辆" Binding="{Binding VehicleCount}" IsReadOnly="True" Width="70"/>
