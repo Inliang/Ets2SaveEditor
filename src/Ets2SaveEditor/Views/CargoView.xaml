@@ -4,23 +4,25 @@
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              mc:Ignorable="d" d:DesignHeight="420" d:DesignWidth="600">
-    <DockPanel Margin="12">
-        <TextBlock DockPanel.Dock="Top" Text="城市 / 货物参考（可在此查看内置数据；货运市场任务可在其页签编辑）" FontWeight="Bold" Margin="0,0,0,4" TextWrapping="Wrap"/>
-        <Grid>
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="*"/>
-                <ColumnDefinition Width="*"/>
-                <ColumnDefinition Width="*"/>
-            </Grid.ColumnDefinitions>
-            <GroupBox Grid.Column="0" Header="城市" Margin="0,0,4,0">
-                <ListBox ItemsSource="{Binding Cities}" DisplayMemberPath="Name"/>
-            </GroupBox>
-            <GroupBox Grid.Column="1" Header="货物" Margin="0,0,4,0">
-                <ListBox ItemsSource="{Binding Cargos}" DisplayMemberPath="Name"/>
-            </GroupBox>
-            <GroupBox Grid.Column="2" Header="已访问城市(来自存档)">
-                <ListBox ItemsSource="{Binding VisitedCities}"/>
-            </GroupBox>
-        </Grid>
-    </DockPanel>
+    <Border Style="{StaticResource CardStyle}">
+        <DockPanel>
+            <TextBlock DockPanel.Dock="Top" Text="城市 / 货物参考（内置数据仅供查看；货运市场任务请到“货运市场”页签编辑）" FontWeight="Bold" Margin="0,0,0,8" TextWrapping="Wrap"/>
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                <GroupBox Grid.Column="0" Header="城市（内置）" Margin="0,0,4,0">
+                    <ListBox ItemsSource="{Binding Cities}" DisplayMemberPath="Name"/>
+                </GroupBox>
+                <GroupBox Grid.Column="1" Header="货物（内置）" Margin="0,0,4,0">
+                    <ListBox ItemsSource="{Binding Cargos}" DisplayMemberPath="Name"/>
+                </GroupBox>
+                <GroupBox Grid.Column="2" Header="已访问城市（来自存档）">
+                    <ListBox ItemsSource="{Binding VisitedCities}"/>
+                </GroupBox>
+            </Grid>
+        </DockPanel>
+    </Border>
 </UserControl>

@@ -9,7 +9,12 @@
     <LangVersion>latest</LangVersion>
     <RootNamespace>Ets2SaveEditor</RootNamespace>
     <AssemblyName>Ets2SaveEditor</AssemblyName>
+    <ApplicationIcon>Assets\appicon.ico</ApplicationIcon>
   </PropertyGroup>
+
+  <ItemGroup>
+    <Resource Include="Assets\appicon.ico" />
+  </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Ets2SaveEditor.Core\Ets2SaveEditor.Core.csproj" />
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.2.2" />

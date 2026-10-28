@@ -4,11 +4,21 @@
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              mc:Ignorable="d" d:DesignHeight="420" d:DesignWidth="600">
-    <DockPanel Margin="12">
-        <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,6">
-            <Button Content="购买所选" Command="{Binding BuyCommand}" CommandParameter="{Binding SelectedItem, ElementName=Dg}" Margin="0,0,6,0"/>
-            <Button Content="升级所选" Command="{Binding UpgradeCommand}" CommandParameter="{Binding SelectedItem, ElementName=Dg}"/>
-        </StackPanel>
-        <DataGrid x:Name="Dg" ItemsSource="{Binding Items}" AutoGenerateColumns="True" IsReadOnly="False"/>
+    <DockPanel>
+        <Border DockPanel.Dock="Top" Style="{StaticResource CardStyle}" Margin="0,0,0,8">
+            <StackPanel Orientation="Horizontal">
+                <Button Content="购买所选" Command="{Binding BuyCommand}" CommandParameter="{Binding SelectedItem, ElementName=Dg}" Margin="0,0,8,0"/>
+                <Button Content="升级所选" Command="{Binding UpgradeCommand}" CommandParameter="{Binding SelectedItem, ElementName=Dg}"/>
+                <TextBlock Text="说明：状态 0=可购买，1=已拥有；升级等级通常 0~3。" VerticalAlignment="Center" Margin="12,0,0,0" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"/>
+            </StackPanel>
+        </Border>
+        <DataGrid x:Name="Dg" ItemsSource="{Binding Items}" AutoGenerateColumns="False" IsReadOnly="False">
+            <DataGrid.Columns>
+                <DataGridTextColumn Header="标识" Binding="{Binding Unit.Id}" IsReadOnly="True" Width="*"/>
+                <DataGridTextColumn Header="位置" Binding="{Binding Location}" Width="2*"/>
+                <DataGridTextColumn Header="状态" Binding="{Binding Status}" Width="80"/>
+                <DataGridTextColumn Header="升级等级" Binding="{Binding Upgrade}" Width="90"/>
+            </DataGrid.Columns>
+        </DataGrid>
     </DockPanel>
 </UserControl>

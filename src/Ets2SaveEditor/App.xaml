@@ -4,5 +4,182 @@
              xmlns:local="clr-namespace:Ets2SaveEditor"
              StartupUri="MainWindow.xaml">
     <Application.Resources>
+        <ResourceDictionary>
+            <!-- 调色板（与图标风格一致：深青蓝 + 青绿） -->
+            <SolidColorBrush x:Key="PrimaryBrush" Color="#14546B"/>
+            <SolidColorBrush x:Key="AccentBrush" Color="#1BA1A1"/>
+            <SolidColorBrush x:Key="AccentHoverBrush" Color="#159999"/>
+            <SolidColorBrush x:Key="BgBrush" Color="#EEF2F5"/>
+            <SolidColorBrush x:Key="CardBrush" Color="#FFFFFF"/>
+            <SolidColorBrush x:Key="TextBrush" Color="#1F2D3D"/>
+            <SolidColorBrush x:Key="MutedBrush" Color="#5B6B79"/>
+            <SolidColorBrush x:Key="BorderBrush" Color="#D7E0E6"/>
+            <SolidColorBrush x:Key="RowAltBrush" Color="#F4F8F9"/>
+            <SolidColorBrush x:Key="SelBrush" Color="#C9E6E6"/>
+
+            <!-- 全局字体与窗口底色 -->
+            <Style TargetType="Window">
+                <Setter Property="FontFamily" Value="Microsoft YaHei, 微软雅黑, PingFang SC, Segoe UI, sans-serif"/>
+                <Setter Property="FontSize" Value="13"/>
+                <Setter Property="Background" Value="{StaticResource BgBrush}"/>
+                <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
+            </Style>
+
+            <!-- 按钮 -->
+            <Style TargetType="Button">
+                <Setter Property="Background" Value="{StaticResource AccentBrush}"/>
+                <Setter Property="Foreground" Value="White"/>
+                <Setter Property="Padding" Value="12,6"/>
+                <Setter Property="BorderThickness" Value="0"/>
+                <Setter Property="Cursor" Value="Hand"/>
+                <Setter Property="FontWeight" Value="Bold"/>
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="Button">
+                            <Border Background="{TemplateBinding Background}" CornerRadius="4" Padding="{TemplateBinding Padding}">
+                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            </Border>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+                <Style.Triggers>
+                    <Trigger Property="IsMouseOver" Value="True">
+                        <Setter Property="Background" Value="{StaticResource AccentHoverBrush}"/>
+                    </Trigger>
+                    <Trigger Property="IsEnabled" Value="False">
+                        <Setter Property="Background" Value="#B7C4CC"/>
+                    </Trigger>
+                </Style.Triggers>
+            </Style>
+
+            <!-- 选项卡 -->
+            <Style TargetType="TabControl">
+                <Setter Property="Background" Value="Transparent"/>
+                <Setter Property="BorderThickness" Value="0"/>
+            </Style>
+            <Style TargetType="TabItem">
+                <Setter Property="Foreground" Value="{StaticResource MutedBrush}"/>
+                <Setter Property="Padding" Value="16,8"/>
+                <Setter Property="FontSize" Value="14"/>
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="TabItem">
+                            <Border x:Name="Bd" Background="Transparent" BorderBrush="Transparent"
+                                    BorderThickness="0,0,0,3" Margin="0,0,6,0" Padding="{TemplateBinding Padding}">
+                                <ContentPresenter ContentSource="Header" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsSelected" Value="True">
+                                    <Setter TargetName="Bd" Property="BorderBrush" Value="{StaticResource AccentBrush}"/>
+                                    <Setter Property="Foreground" Value="{StaticResource PrimaryBrush}"/>
+                                    <Setter Property="FontWeight" Value="Bold"/>
+                                </Trigger>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter TargetName="Bd" Property="BorderBrush" Value="#9FD8D8"/>
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+
+            <!-- 数据网格 -->
+            <Style TargetType="DataGrid">
+                <Setter Property="Background" Value="{StaticResource CardBrush}"/>
+                <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
+                <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}"/>
+                <Setter Property="BorderThickness" Value="1"/>
+                <Setter Property="GridLinesVisibility" Value="Horizontal"/>
+                <Setter Property="HorizontalGridLinesBrush" Value="{StaticResource BorderBrush}"/>
+                <Setter Property="RowHeight" Value="32"/>
+                <Setter Property="ColumnHeaderHeight" Value="36"/>
+                <Setter Property="HeadersVisibility" Value="Column"/>
+                <Setter Property="CanUserAddRows" Value="False"/>
+                <Setter Property="CanUserDeleteRows" Value="False"/>
+                <Setter Property="AutoGenerateColumns" Value="False"/>
+                <Setter Property="SelectionMode" Value="Single"/>
+                <Setter Property="SelectionUnit" Value="FullRow"/>
+                <Setter Property="AlternationCount" Value="2"/>
+                <Setter Property="RowBackground" Value="White"/>
+                <Setter Property="AlternatingRowBackground" Value="{StaticResource RowAltBrush}"/>
+                <Setter Property="EnableRowVirtualization" Value="False"/>
+            </Style>
+            <Style TargetType="DataGridColumnHeader">
+                <Setter Property="Background" Value="{StaticResource PrimaryBrush}"/>
+                <Setter Property="Foreground" Value="White"/>
+                <Setter Property="FontWeight" Value="Bold"/>
+                <Setter Property="Padding" Value="8,0"/>
+                <Setter Property="BorderBrush" Value="{StaticResource AccentBrush}"/>
+                <Setter Property="BorderThickness" Value="0,0,1,0"/>
+                <Setter Property="VerticalContentAlignment" Value="Center"/>
+            </Style>
+            <Style TargetType="DataGridCell">
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="DataGridCell">
+                            <Border x:Name="Bd" Background="Transparent" Padding="8,0">
+                                <ContentPresenter VerticalAlignment="Center"/>
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsSelected" Value="True">
+                                    <Setter TargetName="Bd" Property="Background" Value="{StaticResource SelBrush}"/>
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+
+            <!-- 分组框 -->
+            <Style TargetType="GroupBox">
+                <Setter Property="Foreground" Value="{StaticResource PrimaryBrush}"/>
+                <Setter Property="FontWeight" Value="Bold"/>
+                <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}"/>
+                <Setter Property="BorderThickness" Value="1"/>
+                <Setter Property="Margin" Value="0,0,0,6"/>
+                <Setter Property="Padding" Value="8"/>
+            </Style>
+
+            <!-- 文本框 -->
+            <Style TargetType="TextBox">
+                <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}"/>
+                <Setter Property="BorderThickness" Value="1"/>
+                <Setter Property="Padding" Value="5,3"/>
+                <Setter Property="VerticalContentAlignment" Value="Center"/>
+                <Setter Property="Background" Value="White"/>
+            </Style>
+
+            <!-- 复选框 -->
+            <Style TargetType="CheckBox">
+                <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
+                <Setter Property="VerticalContentAlignment" Value="Center"/>
+                <Setter Property="Margin" Value="0,4"/>
+            </Style>
+
+            <!-- 滑块 -->
+            <Style TargetType="Slider">
+                <Setter Property="VerticalAlignment" Value="Center"/>
+                <Setter Property="Width" Value="220"/>
+            </Style>
+
+            <!-- 状态栏（底部品牌条） -->
+            <Style TargetType="StatusBar">
+                <Setter Property="Background" Value="{StaticResource PrimaryBrush}"/>
+                <Setter Property="Foreground" Value="White"/>
+                <Setter Property="Padding" Value="8,4"/>
+            </Style>
+            <Style TargetType="StatusBarItem">
+                <Setter Property="Foreground" Value="White"/>
+            </Style>
+
+            <!-- 卡片容器（白底 + 细边框 + 圆角） -->
+            <Style x:Key="CardStyle" TargetType="Border">
+                <Setter Property="Background" Value="{StaticResource CardBrush}"/>
+                <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}"/>
+                <Setter Property="BorderThickness" Value="1"/>
+                <Setter Property="CornerRadius" Value="6"/>
+                <Setter Property="Padding" Value="12"/>
+            </Style>
+        </ResourceDictionary>
     </Application.Resources>
 </Application>

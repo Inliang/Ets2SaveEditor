@@ -1,6 +1,10 @@
 using System;
 using System.IO;
+using System.IO.Compression;
+using System.Security.Cryptography;
+using System.Text;
 using Ets2SaveEditor.Core.Domain;
+using Ets2SaveEditor.Core.Sii;
 using Ets2SaveEditor.ViewModels;
 
 namespace Ets2SaveEditor.Tests
@@ -73,8 +77,94 @@ namespace Ets2SaveEditor.Tests
             if (!wearOk) { Console.WriteLine("FAIL: repair/refuel not persisted"); failures++; }
             if (!jobOk) { Console.WriteLine("FAIL: new job not persisted"); failures++; }
 
+            failures += TestEncrypted();
+
             Console.WriteLine(failures == 0 ? "ALL TESTS PASSED" : $"{failures} TEST(S) FAILED");
             return failures == 0 ? 0 : 1;
+        }
+
+        /// <summary>
+        /// 构造一个 SrcC（AES-256-CBC + zlib）加密存档并验证可被正确加载解码。
+        /// 这是修复“无法加载存档”的核心回归测试。
+        /// </summary>
+        private static int TestEncrypted()
+        {
+            int failures = 0;
+
+            string plaintext =
+                "SiiNunit\n{\n" +
+                "bank : _nameless.0001 {\n bank : 250000\n}\n" +
+                "garage : _nameless.0002 {\n status : 1\n location : paris\n}\n" +
+                "}\n";
+
+            // 1) zlib 压缩明文
+            byte[] compressed;
+            using (var ms = new MemoryStream())
+            {
+                using (var z = new ZLibStream(ms, CompressionLevel.Optimal, leaveOpen: true))
+                {
+                    var data = Encoding.UTF8.GetBytes(plaintext);
+                    z.Write(data, 0, data.Length);
+                }
+                compressed = ms.ToArray();
+            }
+
+            // 2) AES-256-CBC 加密（与解码端使用相同的密钥/IV）
+            byte[] iv = { 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88,
+                          0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff, 0x01 };
+            byte[] key =
+            {
+                0x2a, 0x5f, 0xcb, 0x17, 0x91, 0xd2, 0x2f, 0xb6,
+                0x02, 0x45, 0xb3, 0xd8, 0x36, 0x9e, 0xd0, 0xb2,
+                0xc2, 0x73, 0x71, 0x56, 0x3f, 0xbf, 0x1f, 0x3c,
+                0x9e, 0xdf, 0x6b, 0x11, 0x82, 0x5a, 0x5d, 0x0a
+            };
+            byte[] cipher;
+            using (var aes = Aes.Create())
+            {
+                aes.Key = key;
+                aes.IV = iv;
+                aes.Mode = CipherMode.CBC;
+                aes.Padding = PaddingMode.PKCS7;
+                using var enc = aes.CreateEncryptor();
+                cipher = enc.TransformFinalBlock(compressed, 0, compressed.Length);
+            }
+
+            // 3) 组装 SrcC 容器
+            byte[] container = new byte[56 + cipher.Length];
+            byte[] sig = { 0x53, 0x72, 0x63, 0x43 }; // "SrcC"
+            Array.Copy(sig, 0, container, 0, 4);
+            Array.Copy(iv, 0, container, 36, 16);
+            Array.Copy(cipher, 0, container, 56, cipher.Length);
+
+            string dir = Path.Combine(Path.GetTempPath(), "ets2test");
+            Directory.CreateDirectory(dir);
+            string encPath = Path.Combine(dir, "encrypted.sii");
+            File.WriteAllBytes(encPath, container);
+
+            // 4) 加载并校验
+            var sf = new SaveFile();
+            try
+            {
+                sf.Load(encPath);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("FAIL: encrypted save threw on load: " + ex.Message);
+                return failures + 1;
+            }
+
+            bool formatOk = sf.Format == SiiFormat.Encrypted;
+            bool parsedOk = sf.Document != null && sf.Document.Units.Count >= 2;
+            var bank = sf.GetBank();
+            bool moneyOk = bank != null && bank.Money == 250000;
+
+            Console.WriteLine($"[encrypted] formatOk={formatOk} parsedOk={parsedOk} moneyOk={moneyOk} units={sf.Document?.Units.Count}");
+            if (!formatOk) { Console.WriteLine("FAIL: encrypted format not detected"); failures++; }
+            if (!parsedOk) { Console.WriteLine("FAIL: encrypted save not parsed"); failures++; }
+            if (!moneyOk) { Console.WriteLine("FAIL: bank money not decoded from encrypted save"); failures++; }
+
+            return failures;
         }
     }
 }

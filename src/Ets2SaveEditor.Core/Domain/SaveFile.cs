@@ -66,18 +66,7 @@ namespace Ets2SaveEditor.Core.Domain
             string text;
             try
             {
-                if (Format == SiiFormat.Plaintext)
-                {
-                    text = Encoding.UTF8.GetString(raw);
-                }
-                else if (Format == SiiFormat.Zlib)
-                {
-                    text = SiiFormatDetector.Decompress(raw);
-                }
-                else
-                {
-                    throw new SiiFormatException("Unsupported or unrecognized SII format for file: " + Path);
-                }
+                text = SiiFormatDetector.Decode(raw, Format);
             }
             catch (SiiFormatException)
             {

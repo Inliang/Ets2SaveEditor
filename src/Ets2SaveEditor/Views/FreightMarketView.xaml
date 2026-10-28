@@ -4,11 +4,22 @@
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              mc:Ignorable="d" d:DesignHeight="420" d:DesignWidth="600">
-    <DockPanel Margin="12">
-        <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,6">
-            <Button Content="新建任务" Command="{Binding CreateJobCommand}" Margin="0,0,6,0"/>
-            <Button Content="删除所选" Command="{Binding DeleteJobCommand}" CommandParameter="{Binding SelectedItem, ElementName=Dg}"/>
-        </StackPanel>
-        <DataGrid x:Name="Dg" ItemsSource="{Binding Items}" AutoGenerateColumns="True" IsReadOnly="False"/>
+    <DockPanel>
+        <Border DockPanel.Dock="Top" Style="{StaticResource CardStyle}" Margin="0,0,0,8">
+            <StackPanel Orientation="Horizontal">
+                <Button Content="新建任务" Command="{Binding CreateJobCommand}" Margin="0,0,8,0"/>
+                <Button Content="删除所选" Command="{Binding DeleteJobCommand}" CommandParameter="{Binding SelectedItem, ElementName=Dg}"/>
+                <TextBlock Text="城市/货物请填写游戏内英文标识（如 berlin、oil）；报酬为数字。" VerticalAlignment="Center" Margin="12,0,0,0" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"/>
+            </StackPanel>
+        </Border>
+        <DataGrid x:Name="Dg" ItemsSource="{Binding Items}" AutoGenerateColumns="False" IsReadOnly="False">
+            <DataGrid.Columns>
+                <DataGridTextColumn Header="标识" Binding="{Binding Unit.Id}" IsReadOnly="True" Width="*"/>
+                <DataGridTextColumn Header="起点城市" Binding="{Binding SourceCity}" Width="*"/>
+                <DataGridTextColumn Header="终点城市" Binding="{Binding TargetCity}" Width="*"/>
+                <DataGridTextColumn Header="货物" Binding="{Binding Cargo}" Width="*"/>
+                <DataGridTextColumn Header="报酬" Binding="{Binding Reward}" Width="100"/>
+            </DataGrid.Columns>
+        </DataGrid>
     </DockPanel>
 </UserControl>

@@ -4,10 +4,18 @@
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              mc:Ignorable="d" d:DesignHeight="420" d:DesignWidth="600">
-    <DockPanel Margin="12">
-        <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,6">
-            <Button Content="全部修理" Command="{Binding RepairAllCommand}"/>
-        </StackPanel>
-        <DataGrid ItemsSource="{Binding Items}" AutoGenerateColumns="True" IsReadOnly="False"/>
+    <DockPanel>
+        <Border DockPanel.Dock="Top" Style="{StaticResource CardStyle}" Margin="0,0,0,8">
+            <StackPanel Orientation="Horizontal">
+                <Button Content="全部修理" Command="{Binding RepairAllCommand}"/>
+                <TextBlock Text="磨损以百分比显示（只读），点“全部修理”可一键归零。" VerticalAlignment="Center" Margin="12,0,0,0" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"/>
+            </StackPanel>
+        </Border>
+        <DataGrid ItemsSource="{Binding Items}" AutoGenerateColumns="False" IsReadOnly="False">
+            <DataGrid.Columns>
+                <DataGridTextColumn Header="标识" Binding="{Binding Unit.Id}" IsReadOnly="True" Width="*"/>
+                <DataGridTextColumn Header="磨损" Binding="{Binding Wear, StringFormat=P0}" IsReadOnly="True" Width="*"/>
+            </DataGrid.Columns>
+        </DataGrid>
     </DockPanel>
 </UserControl>
