@@ -1,0 +1,19 @@
+<UserControl x:Class="Ets2SaveEditor.Views.SettingsView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             mc:Ignorable="d" d:DesignHeight="420" d:DesignWidth="500">
+    <StackPanel Margin="12">
+        <CheckBox Content="保存前自动备份存档" IsChecked="{Binding AutoBackup}" Margin="0,4"/>
+        <CheckBox Content="探测 Steam 存档" IsChecked="{Binding SteamDetection}" Margin="0,4"/>
+        <StackPanel Orientation="Horizontal" Margin="0,4">
+            <TextBlock Text="默认存档路径：" VerticalAlignment="Center"/>
+            <TextBox Text="{Binding DefaultSavePath}" Width="260"/>
+        </StackPanel>
+        <Button Content="保存设置" Command="{Binding SaveSettingsCommand}" Width="100" Margin="0,8" HorizontalAlignment="Left"/>
+        <Separator Margin="0,12"/>
+        <TextBlock Text="关于 / 免责声明" FontWeight="Bold" Margin="0,4"/>
+        <TextBlock TextWrapping="Wrap" Text="Ets2SaveEditor 是一个开源的欧卡2（ETS2）存档修改器。修改游戏存档存在风险，请务必在编辑前备份。本工具按“原样”提供，作者不对任何存档损坏或账号封禁负责。SII 解析采用无损透传，未识别字段原样保留。"/>
+    </StackPanel>
+</UserControl>

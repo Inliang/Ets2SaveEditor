@@ -1,0 +1,111 @@
+# ============================================================
+# Ets2SaveEditor - .gitignore
+# 标准 .NET / Visual Studio / Rider / Windows 忽略规则
+# ============================================================
+
+# --- 编译输出 / 中间产物 ---
+bin/
+obj/
+[Bb]in/
+[Oo]bj/
+
+# --- 构建与发布目录 ---
+build/
+dist/
+publish/
+artifacts/
+*.published
+
+# --- Visual Studio / MSBuild ---
+.vs/
+*.user
+*.userosscache
+*.suo
+*.userprefs
+*_i.cshtml.cs
+*.dbmdl
+*.pdb
+*.ilk
+*.aps
+*.ncb
+*.opensdf
+*.sdf
+*.cachefile
+*.VC.db
+*.VC.VC.opendb
+[Vv]isual[Cc]ode/.vs
+
+# --- Rider (JetBrains) ---
+.idea/
+*.iml
+*.iws
+._*
+
+# --- 测试与覆盖率 ---
+[Tt]est[Rr]esult*/
+*.trx
+*.testlog
+[Bb]uild[Ll]og.*
+*.coverage
+*.coveragexml
+[Cc]overage/
+*.nunit
+.vs/tests/
+
+# --- NuGet ---
+*.nupkg
+.nuget/
+packages/
+project.lock.json
+project.fragment.lock.json
+artifacts/**/nuget/
+
+# --- 用户密钥 / 敏感配置 (User Secrets / 本地配置) ---
+appsettings.Local.json
+appsettings.local.json
+secrets.json
+*.secrets.json
+secrets/
+UserSecrets/
+.env
+.env.*
+*.local.config
+
+# --- 日志与临时文件 ---
+*.log
+*.tmp
+*.temp
+*.bak
+*.swp
+*.swo
+~$*
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# --- 运行时 / 调试 ---
+.vscode/*
+!.vscode/extensions.json
+!/.vscode/settings.json
+!/.vscode/tasks.json
+!/.vscode/launch.json
+!/.vscode/*.code-snippets
+
+# --- WPF / Windows 特定 ---
+*.Cache
+*.pfx
+*.snk
+*.rsa
+Blend\ for\ Visual\ Studio/
+
+# --- 操作系统 ---
+# Windows
+$RECYCLE.BIN/
+System Volume Information/
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+# Linux
+*~
+.directory

@@ -1,0 +1,52 @@
+<UserControl x:Class="Ets2SaveEditor.Views.ProfileView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             mc:Ignorable="d" d:DesignHeight="420" d:DesignWidth="500">
+    <ScrollViewer Margin="12">
+        <StackPanel>
+            <TextBlock Text="档案 / 玩家" FontWeight="Bold" FontSize="14" Margin="0,0,0,8"/>
+            <StackPanel Orientation="Horizontal" Margin="0,4">
+                <TextBlock Text="账户金钱：" Width="100" VerticalAlignment="Center"/>
+                <TextBox Text="{Binding Money}" Width="180"/>
+            </StackPanel>
+            <StackPanel Orientation="Horizontal" Margin="0,4">
+                <TextBlock Text="当前等级：" Width="100" VerticalAlignment="Center"/>
+                <TextBlock Text="{Binding Level}" VerticalAlignment="Center" FontWeight="Bold"/>
+            </StackPanel>
+            <StackPanel Orientation="Horizontal" Margin="0,4">
+                <TextBlock Text="经验值：" Width="100" VerticalAlignment="Center"/>
+                <TextBox Text="{Binding Experience}" Width="180"/>
+            </StackPanel>
+
+            <TextBlock Text="技能 (0-6)" FontWeight="Bold" Margin="0,12,0,4"/>
+            <StackPanel Orientation="Horizontal" Margin="0,2">
+                <TextBlock Text="长途运输" Width="100" VerticalAlignment="Center"/>
+                <Slider Minimum="0" Maximum="6" TickFrequency="1" Value="{Binding LongDist}" Width="200" IsSnapToTickEnabled="True"/>
+                <TextBlock Text="{Binding LongDist}" Width="20"/>
+            </StackPanel>
+            <StackPanel Orientation="Horizontal" Margin="0,2">
+                <TextBlock Text="重载货物" Width="100" VerticalAlignment="Center"/>
+                <Slider Minimum="0" Maximum="6" TickFrequency="1" Value="{Binding Heavy}" Width="200" IsSnapToTickEnabled="True"/>
+                <TextBlock Text="{Binding Heavy}" Width="20"/>
+            </StackPanel>
+            <StackPanel Orientation="Horizontal" Margin="0,2">
+                <TextBlock Text="易碎品" Width="100" VerticalAlignment="Center"/>
+                <Slider Minimum="0" Maximum="6" TickFrequency="1" Value="{Binding Fragile}" Width="200" IsSnapToTickEnabled="True"/>
+                <TextBlock Text="{Binding Fragile}" Width="20"/>
+            </StackPanel>
+            <StackPanel Orientation="Horizontal" Margin="0,2">
+                <TextBlock Text="高时效" Width="100" VerticalAlignment="Center"/>
+                <Slider Minimum="0" Maximum="6" TickFrequency="1" Value="{Binding Urgent}" Width="200" IsSnapToTickEnabled="True"/>
+                <TextBlock Text="{Binding Urgent}" Width="20"/>
+            </StackPanel>
+            <StackPanel Orientation="Horizontal" Margin="0,2">
+                <TextBlock Text="节油驾驶" Width="100" VerticalAlignment="Center"/>
+                <Slider Minimum="0" Maximum="6" TickFrequency="1" Value="{Binding EcoDriving}" Width="200" IsSnapToTickEnabled="True"/>
+                <TextBlock Text="{Binding EcoDriving}" Width="20"/>
+            </StackPanel>
+            <TextBlock Text="提示：修改后点顶部“保存”写回存档（游戏加载时会自动重新压缩）。" Margin="0,12,0,0" Foreground="Gray" TextWrapping="Wrap"/>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>
