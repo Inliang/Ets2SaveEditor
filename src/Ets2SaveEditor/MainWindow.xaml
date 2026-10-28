@@ -31,16 +31,41 @@
                 <ColumnDefinition Width="*"/>
             </Grid.ColumnDefinitions>
 
-            <!-- 左侧：存档槽 / 文件列表 -->
-            <Border Grid.Column="0" Style="{StaticResource CardStyle}" Margin="8">
-                <DockPanel>
-                    <Button x:Name="BtnRefresh" Content="刷新存档列表" DockPanel.Dock="Top" Margin="0,0,0,6" Click="BtnRefresh_Click"/>
-                    <TextBlock Text="存档槽（来自文档 / Steam）" DockPanel.Dock="Top" FontWeight="Bold" Foreground="{StaticResource PrimaryBrush}" Margin="0,0,0,4"/>
-                    <ListBox x:Name="LbSlots" ItemsSource="{Binding SaveSlots}" DisplayMemberPath="Display"
-                             SelectionChanged="LbSlots_SelectionChanged" Height="180" Margin="0,0,0,8"/>
-                    <TextBlock Text="存档文件 (.sii)" DockPanel.Dock="Top" FontWeight="Bold" Foreground="{StaticResource PrimaryBrush}" Margin="0,0,0,4"/>
-                    <ListBox x:Name="LbFiles" MouseDoubleClick="LbFiles_MouseDoubleClick"/>
-                </DockPanel>
+            <!-- 左侧：加载 / 存档槽 / 文件列表 -->
+            <Border Grid.Column="0" Style="{StaticResource CardStyle}" Margin="8" Padding="10">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="2*"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="2*"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+
+                    <Button Grid.Row="0" x:Name="BtnLoadSave" Content="加载存档（选择 .sii 文件）"
+                            Margin="0,0,0,6" Click="BtnLoadSave_Click"
+                            Background="{StaticResource AccentBrush}" Foreground="White" FontWeight="Bold"/>
+                    <Button Grid.Row="1" x:Name="BtnOpenFolder" Content="打开存档文件夹..."
+                            Margin="0,0,0,6" Click="MiOpenFolder_Click"/>
+                    <Button Grid.Row="2" x:Name="BtnRefresh" Content="刷新存档列表"
+                            Margin="0,0,0,8" Click="BtnRefresh_Click"/>
+
+                    <TextBlock Grid.Row="3" Text="存档槽（自动扫描 文档 / Steam）"
+                               FontWeight="Bold" Foreground="{StaticResource PrimaryBrush}" Margin="0,0,0,4"/>
+                    <ListBox Grid.Row="4" x:Name="LbSlots" ItemsSource="{Binding SaveSlots}"
+                             DisplayMemberPath="Display"
+                             SelectionChanged="LbSlots_SelectionChanged"/>
+
+                    <TextBlock Grid.Row="5" Text="存档文件 (.sii) — 双击加载，或选中后点「加载选中文件」"
+                               FontWeight="Bold" Foreground="{StaticResource PrimaryBrush}" Margin="6,6,0,4"/>
+                    <ListBox Grid.Row="6" x:Name="LbFiles" MouseDoubleClick="LbFiles_MouseDoubleClick"/>
+
+                    <Button Grid.Row="7" x:Name="BtnLoadSelected" Content="加载选中文件"
+                            Margin="0,6,0,0" Click="BtnLoadSelected_Click"/>
+                </Grid>
             </Border>
 
             <!-- 右侧：功能页签 -->

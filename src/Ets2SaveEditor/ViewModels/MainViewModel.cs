@@ -41,6 +41,10 @@ namespace Ets2SaveEditor.ViewModels
                 try { list.AddRange(new SaveLocationFinder().FindSteamProfiles()); } catch { }
             }
             SaveSlots = new ObservableCollection<SaveSlot>(list);
+            if (list.Count == 0)
+                StatusText = "未自动发现存档，请点击左上角「加载存档」手动选择 .sii 文件。";
+            else
+                StatusText = $"已发现 {list.Count} 个存档槽；双击 .sii 文件或选中后点「加载选中文件」。";
         }
 
         [RelayCommand]

@@ -30,6 +30,16 @@ namespace Ets2SaveEditor
 
         private void BtnRefresh_Click(object sender, RoutedEventArgs e) => VM.RefreshSlotsCommand.Execute(null);
 
+        private void BtnLoadSave_Click(object sender, RoutedEventArgs e) => VM.OpenFileCommand.Execute(null);
+
+        private void BtnLoadSelected_Click(object sender, RoutedEventArgs e)
+        {
+            if (LbFiles.SelectedItem is string file)
+                VM.LoadFile(file);
+            else
+                MessageBox.Show("请先在下方列表中选择一个 .sii 文件，再点击「加载选中文件」。", "提示");
+        }
+
         private void LbSlots_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
             if (LbSlots.SelectedItem is SaveSlot slot)
