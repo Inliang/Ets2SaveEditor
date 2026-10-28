@@ -15,6 +15,10 @@ jobs:
     # WPF 依赖 Windows 桌面运行时，必须在 Windows runner 上构建
     runs-on: windows-latest
 
+    # 授予默认 GITHUB_TOKEN 写权限，否则创建 Release 会报 403
+    permissions:
+      contents: write
+
     steps:
       - name: 检出代码
         uses: actions/checkout@v4
