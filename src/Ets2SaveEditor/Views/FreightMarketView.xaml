@@ -9,16 +9,18 @@
             <StackPanel Orientation="Horizontal">
                 <Button Content="新建任务" Command="{Binding CreateJobCommand}" Margin="0,0,8,0"/>
                 <Button Content="删除所选" Command="{Binding DeleteJobCommand}" CommandParameter="{Binding SelectedItem, ElementName=Dg}"/>
-                <TextBlock Text="城市/货物请填写游戏内英文标识（如 berlin、oil）；报酬为数字。" VerticalAlignment="Center" Margin="12,0,0,0" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"/>
+                <TextBlock Text="货运市场条目来自 job_offer_data 单元：目标城市、货物、公司车辆均为游戏内英文标识。" VerticalAlignment="Center" Margin="12,0,0,0" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"/>
             </StackPanel>
         </Border>
         <DataGrid x:Name="Dg" ItemsSource="{Binding Items}" AutoGenerateColumns="False" IsReadOnly="False">
             <DataGrid.Columns>
                 <DataGridTextColumn Header="标识" Binding="{Binding Unit.Id}" IsReadOnly="True" Width="*"/>
-                <DataGridTextColumn Header="起点城市" Binding="{Binding SourceCity}" Width="*"/>
-                <DataGridTextColumn Header="终点城市" Binding="{Binding TargetCity}" Width="*"/>
+                <DataGridTextColumn Header="目标城市" Binding="{Binding TargetCity}" Width="*"/>
                 <DataGridTextColumn Header="货物" Binding="{Binding Cargo}" Width="*"/>
-                <DataGridTextColumn Header="报酬" Binding="{Binding Reward}" Width="100"/>
+                <DataGridTextColumn Header="公司车辆" Binding="{Binding Truck}" Width="*"/>
+                <DataGridTextColumn Header="距离(km)" Binding="{Binding DistanceKm}" Width="90"/>
+                <DataGridTextColumn Header="紧急度" Binding="{Binding Urgency}" Width="80"/>
+                <DataGridTextColumn Header="装载率" Binding="{Binding FillRatio, StringFormat=P0}" Width="90"/>
             </DataGrid.Columns>
         </DataGrid>
     </DockPanel>

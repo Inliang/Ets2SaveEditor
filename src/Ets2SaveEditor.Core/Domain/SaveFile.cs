@@ -22,6 +22,19 @@ namespace Ets2SaveEditor.Core.Domain
         /// <summary>Detected container format.</summary>
         public SiiFormat Format { get; set; }
 
+        /// <summary>
+        /// Container format the file had when it was loaded. Used to decide
+        /// whether the original (encrypted) file must be backed up before it
+        /// is replaced by the plaintext SII output.
+        /// </summary>
+        public SiiFormat LoadedFormat { get; private set; }
+
+        /// <summary>
+        /// Path of the backup created by the last successful save, or null when
+        /// no backup was written.
+        /// </summary>
+        public string LastBackupPath { get; private set; }
+
         /// <summary>Parsed SII document.</summary>
         public SiiDocument Document { get; set; }
 
@@ -62,6 +75,8 @@ namespace Ets2SaveEditor.Core.Domain
             }
 
             Format = SiiFormatDetector.Detect(raw);
+            LoadedFormat = Format;
+            LastBackupPath = null;
 
             string text;
             try
@@ -94,9 +109,14 @@ namespace Ets2SaveEditor.Core.Domain
 
         /// <summary>
         /// Serializes the loaded document and writes it to <paramref name="path"/>
-        /// (or the previously set <see cref="Path"/>). When <paramref name="backup"/>
-        /// is true, a timestamped backup of the target is created first. The
-        /// original file is never overwritten if serialization fails.
+        /// (or the previously set <see cref="Path"/>).
+        /// <para>
+        /// The game cannot read a re-encrypted container (the HMAC key is not
+        /// public), so the file is always written as plaintext SII, which the
+        /// game engine reads natively. When the original file was encrypted, a
+        /// timestamped backup of it is created first — no matter what
+        /// <paramref name="backup"/> says — so the original data is never lost.
+        /// </para>
         /// </summary>
         public void Save(string path, bool backup)
         {
@@ -124,11 +144,14 @@ namespace Ets2SaveEditor.Core.Domain
 
             try
             {
-                if (backup)
-                {
-                    BackupService.Backup(target);
-                }
-                File.WriteAllText(target, serialized, new UTF8Encoding(false));
+                // 加密存档必须先备份：明文输出无法再变回加密容器（HMAC 密钥未公开）。
+                bool needsBackup = backup || IsEncryptedContainer(target);
+                string backupPath = needsBackup ? BackupService.Backup(target) : null;
+
+                WriteAtomically(target, serialized);
+
+                LastBackupPath = backupPath;
+                Format = SiiFormat.Plaintext;
             }
             catch (Exception ex)
             {
@@ -136,6 +159,86 @@ namespace Ets2SaveEditor.Core.Domain
             }
 
             Path = target;
+        }
+
+        /// <summary>
+        /// Writes the file atomically: the content is first written to a
+        /// temporary file in the same directory and then moved over the
+        /// target. A crash or power loss therefore leaves the target either
+        /// with the complete old content or with the complete new content —
+        /// never with a truncated file.
+        /// </summary>
+        private static void WriteAtomically(string target, string content)
+        {
+            // 注意：本类有实例属性 Path，需用 System.IO.Path 显式访问静态方法。
+            string directory = System.IO.Path.GetDirectoryName(target);
+            if (string.IsNullOrEmpty(directory))
+            {
+                directory = Directory.GetCurrentDirectory();
+            }
+
+            // 临时文件必须与目标同目录，保证移动是同一卷内的原子操作。
+            string tempPath = System.IO.Path.Combine(directory, System.IO.Path.GetFileName(target) + ".tmp");
+
+            try
+            {
+                var encoding = new UTF8Encoding(false);
+                using (var stream = new FileStream(tempPath, FileMode.Create, FileAccess.Write, FileShare.None))
+                using (var writer = new StreamWriter(stream, encoding))
+                {
+                    writer.Write(content);
+                    writer.Flush();
+                    stream.Flush(true); // 落盘后再替换目标文件
+                }
+
+                if (File.Exists(target))
+                {
+                    // 同一卷内原子替换（Windows: MoveFileEx + REPLACE_EXISTING）。
+                    File.Move(tempPath, target, overwrite: true);
+                }
+                else
+                {
+                    File.Move(tempPath, target);
+                }
+            }
+            catch
+            {
+                // 失败时清理临时文件，目标文件保持原样。
+                try
+                {
+                    if (File.Exists(tempPath)) File.Delete(tempPath);
+                }
+                catch
+                {
+                    // 清理失败不影响原始错误。
+                }
+                throw;
+            }
+        }
+
+        /// <summary>
+        /// Checks whether the file at <paramref name="path"/> is a "ScsC"
+        /// encrypted container. Such a file must be backed up before it is
+        /// replaced by the plaintext SII output, because the container cannot
+        /// be recreated (its HMAC key is not public).
+        /// </summary>
+        private static bool IsEncryptedContainer(string path)
+        {
+            try
+            {
+                if (!File.Exists(path)) return false;
+
+                using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+                var header = new byte[4];
+                if (stream.Read(header, 0, 4) < 4) return false;
+
+                return header[0] == (byte)'S' && header[1] == (byte)'c' &&
+                       header[2] == (byte)'s' && header[3] == (byte)'C';
+            }
+            catch
+            {
+                return false;
+            }
         }
 
         // ---- Convenience typed accessors ----

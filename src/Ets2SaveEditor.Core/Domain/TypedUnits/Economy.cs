@@ -5,7 +5,9 @@ using Ets2SaveEditor.Core.Sii.Model;
 namespace Ets2SaveEditor.Core.Domain.TypedUnits
 {
     /// <summary>
-    /// Typed wrapper around the <c>economy</c> unit.
+    /// Typed wrapper around the <c>economy</c> unit. The economy unit is the
+    /// root of a save file: it references the bank, the player and all other
+    /// sub-units and carries the global progress of the profile.
     /// </summary>
     public class Economy
     {
@@ -20,9 +22,10 @@ namespace Ets2SaveEditor.Core.Domain.TypedUnits
         }
 
         /// <summary>
-        /// Cities the player has visited. Best-effort: reads the "visited_cities"
-        /// attribute (array of references or strings). Returns an empty list if
-        /// the field is absent or its exact shape is unknown.
+        /// Cities the player has visited. Best-effort: reads the
+        /// <c>visited_cities</c> attribute (array of encoded strings).
+        /// Returns an empty list if the field is absent or its exact shape is
+        /// unknown.
         /// </summary>
         public List<string> VisitedCities
         {
@@ -31,26 +34,74 @@ namespace Ets2SaveEditor.Core.Domain.TypedUnits
                 var list = new List<string>();
                 if (_unit == null) return list;
 
-                var attr = _unit.GetAttribute("visited_cities");
-                if (attr == null) return list;
-
-                if (attr.IsArray && attr.Value is ArrayValue arr)
+                foreach (var item in _unit.GetArrayItems(Constants.EconomyVisitedCitiesAttribute))
                 {
-                    foreach (var item in arr.Items)
-                    {
-                        if (item is ReferenceValue rv) list.Add(rv.TargetId);
-                        else if (item is StringValue sv) list.Add(sv.Value);
-                    }
-                }
-                else if (attr.Value is ReferenceValue rv2)
-                {
-                    list.Add(rv2.TargetId);
-                }
-                else if (attr.Value is StringValue sv2)
-                {
-                    list.Add(sv2.Value);
+                    string value = item.AsId();
+                    if (!string.IsNullOrEmpty(value)) list.Add(value);
                 }
 
+                return list;
+            }
+        }
+
+        /// <summary>Accumulated experience points (<c>experience_points</c>).</summary>
+        public long ExperiencePoints
+        {
+            get { return _unit != null ? _unit.GetLong(Constants.EconomyExperienceAttribute) : 0; }
+            set { if (_unit != null) _unit.SetScalar(Constants.EconomyExperienceAttribute, value); }
+        }
+
+        /// <summary>Total driven distance in kilometres (<c>total_distance</c>).</summary>
+        public long TotalDistance
+        {
+            get { return _unit != null ? _unit.GetLong("total_distance") : 0; }
+            set { if (_unit != null) _unit.SetScalar("total_distance", value); }
+        }
+
+        /// <summary>Total amount of fuel bought in litres (<c>total_fuel_litres</c>).</summary>
+        public long TotalFuelLitres
+        {
+            get { return _unit != null ? _unit.GetLong("total_fuel_litres") : 0; }
+            set { if (_unit != null) _unit.SetScalar("total_fuel_litres", value); }
+        }
+
+        /// <summary>Total amount of money spent on fuel (<c>total_fuel_price</c>).</summary>
+        public long TotalFuelPrice
+        {
+            get { return _unit != null ? _unit.GetLong("total_fuel_price") : 0; }
+            set { if (_unit != null) _unit.SetScalar("total_fuel_price", value); }
+        }
+
+        /// <summary>Average damage rate of the player (<c>adr</c>).</summary>
+        public int Adr
+        {
+            get { return _unit != null ? (int)_unit.GetLong("adr") : 0; }
+            set { if (_unit != null) _unit.SetScalar("adr", (long)value); }
+        }
+
+        /// <summary>Identifier of the bank unit referenced by the economy unit.</summary>
+        public string BankId
+        {
+            get { return _unit != null ? _unit.GetReference("bank") : string.Empty; }
+        }
+
+        /// <summary>Identifier of the player unit referenced by the economy unit.</summary>
+        public string PlayerId
+        {
+            get { return _unit != null ? _unit.GetReference("player") : string.Empty; }
+        }
+
+        /// <summary>Identifiers of all garages of the profile.</summary>
+        public List<string> GarageIds
+        {
+            get
+            {
+                var list = new List<string>();
+                if (_unit == null) return list;
+                foreach (var item in _unit.GetArrayItems("garages"))
+                {
+                    list.Add(item.AsId());
+                }
                 return list;
             }
         }

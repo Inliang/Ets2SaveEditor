@@ -20,8 +20,9 @@
                 <DataGridTextColumn Header="变速箱磨损" Binding="{Binding TransmissionWear, StringFormat=P0}" IsReadOnly="True" Width="*"/>
                 <DataGridTextColumn Header="驾驶室磨损" Binding="{Binding CabinWear, StringFormat=P0}" IsReadOnly="True" Width="*"/>
                 <DataGridTextColumn Header="轮胎磨损" Binding="{Binding WheelWear, StringFormat=P0}" IsReadOnly="True" Width="*"/>
-                <DataGridTextColumn Header="燃油" Binding="{Binding Fuel, StringFormat=F1}" Width="90"/>
-                <DataGridTextColumn Header="油箱容量" Binding="{Binding FuelCapacity, StringFormat=F1}" Width="90"/>
+                <DataGridTextColumn Header="剩余油量" Binding="{Binding Fuel, StringFormat=P0}" Width="90"/>
+                <DataGridTextColumn Header="里程(km)" Binding="{Binding Odometer}" IsReadOnly="True" Width="100"/>
+                <DataGridTextColumn Header="车牌" Binding="{Binding LicensePlate}" Width="140"/>
             </DataGrid.Columns>
         </DataGrid>
     </DockPanel>

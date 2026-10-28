@@ -18,8 +18,14 @@ namespace Ets2SaveEditor.Core.Sii
         private static readonly Regex UnitStartRegex =
             new Regex(@"^\s*(?<type>[\w\.]+)\s*:\s*(?<id>.+?)\s*\{\s*$", RegexOptions.Compiled);
 
+        /// <summary>
+        /// Matches a single attribute line, optionally carrying an array index
+        /// (<c>name[3]: value</c>).
+        /// </summary>
         private static readonly Regex AttributeRegex =
-            new Regex(@"^\s*(?<name>[\w\.]+)\s*:\s*(?<val>.*)$", RegexOptions.Compiled);
+            new Regex(@"^\s*(?<name>[\w\.]+)(?:\[(?<idx>\d+)\])?\s*:\s*(?<val>.*)$", RegexOptions.Compiled);
+
+        private static readonly Regex IntegerRegex = new Regex(@"^-?\d+$", RegexOptions.Compiled);
 
         /// <summary>
         /// Parses the given SII text into a <see cref="SiiDocument"/>.
@@ -146,11 +152,27 @@ namespace Ets2SaveEditor.Core.Sii
                 {
                     string name = attrMatch.Groups["name"].Value;
                     string val = attrMatch.Groups["val"].Value.TrimEnd();
+                    Group indexGroup = attrMatch.Groups["idx"];
 
                     if (val.Length > 0 && !val.StartsWith("{"))
                     {
                         SiiValue value = ToSiiValue(val);
-                        AddAttribute(unit, name, value, line);
+                        if (indexGroup.Success)
+                        {
+                            int arrayIndex;
+                            if (int.TryParse(indexGroup.Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out arrayIndex))
+                            {
+                                AddArrayElement(unit, name, value, arrayIndex);
+                            }
+                            else
+                            {
+                                AddAttribute(unit, name, value, line);
+                            }
+                        }
+                        else
+                        {
+                            AddAttribute(unit, name, value, line);
+                        }
                         index++;
                         continue;
                     }
@@ -208,6 +230,44 @@ namespace Ets2SaveEditor.Core.Sii
         }
 
         /// <summary>
+        /// Adds an indexed array element. The preceding <c>name: count</c> line
+        /// is replaced by the array itself; the count is recomputed on output.
+        /// </summary>
+        private static void AddArrayElement(SiiUnit unit, string name, SiiValue value, int arrayIndex)
+        {
+            var existing = unit.GetAttribute(name);
+
+            if (existing == null)
+            {
+                var arr = new ArrayValue(new List<SiiValue> { value });
+                unit.Attributes.Add(new SiiAttribute(name, arr) { IsArray = true });
+                return;
+            }
+
+            if (existing.IsArray && existing.Value is ArrayValue array)
+            {
+                while (array.Items.Count < arrayIndex)
+                {
+                    array.Items.Add(new StringValue(string.Empty));
+                }
+                if (arrayIndex < array.Items.Count)
+                {
+                    array.Items[arrayIndex] = value;
+                }
+                else
+                {
+                    array.Items.Add(value);
+                }
+                return;
+            }
+
+            // The current value is only the element count: replace it with the array.
+            var newArray = new ArrayValue(new List<SiiValue> { value });
+            existing.Value = newArray;
+            existing.IsArray = true;
+        }
+
+        /// <summary>
         /// Interprets a raw attribute value string as an <see cref="SiiValue"/>.
         /// </summary>
         public static SiiValue ToSiiValue(string v)
@@ -221,6 +281,14 @@ namespace Ets2SaveEditor.Core.Sii
                 return ParseString(s);
             }
 
+            // Hexadecimal IEEE-754 single precision float (the game's notation).
+            // Must be handled before the integer / float branches.
+            if (s[0] == '&')
+            {
+                SiiValue hexFloat = ParseHexFloat(s);
+                if (hexFloat != null) return hexFloat;
+            }
+
             // Boolean.
             if (s == "true") return new BoolValue(true);
             if (s == "false") return new BoolValue(false);
@@ -232,7 +300,7 @@ namespace Ets2SaveEditor.Core.Sii
             }
 
             // Integer.
-            if (Regex.IsMatch(s, @"^-?\d+$"))
+            if (IntegerRegex.IsMatch(s))
             {
                 long l;
                 if (long.TryParse(s, NumberStyles.Integer, CultureInfo.InvariantCulture, out l))
@@ -255,6 +323,25 @@ namespace Ets2SaveEditor.Core.Sii
                 refId = refId.Substring(1, refId.Length - 2);
             }
             return new ReferenceValue(refId);
+        }
+
+        /// <summary>
+        /// Parses the game's hexadecimal float notation (<c>&amp;xxxxxxxx</c>)
+        /// into a <see cref="FloatValue"/> flagged as hexadecimal.
+        /// </summary>
+        private static SiiValue ParseHexFloat(string s)
+        {
+            string hex = s.Substring(1).Trim();
+            if (hex.Length == 0 || hex.Length > 8) return null;
+
+            uint bits;
+            if (!uint.TryParse(hex, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out bits))
+            {
+                return null;
+            }
+
+            float value = BitConverter.ToSingle(BitConverter.GetBytes(bits), 0);
+            return new FloatValue(value, true);
         }
 
         private static SiiValue ParseString(string s)
@@ -283,17 +370,183 @@ namespace Ets2SaveEditor.Core.Sii
             return new StringValue(sb.ToString());
         }
 
+        /// <summary>
+        /// Parses a vector / placement value. Handles the three flavours the
+        /// game writes: <c>(x, y)</c>, <c>(x, y, z)</c>, <c>(w; x, y, z)</c> and
+        /// the placement form <c>(x, y, z) (w; a, b, c)</c>.
+        /// </summary>
         private static SiiValue ParseVector(string s)
         {
-            int end = s.IndexOf(')');
-            if (end < 0) end = s.Length;
-            string inner = s.Substring(1, end - 1);
-            string[] parts = inner.Split(',');
-            double x = 0, y = 0, z = 0;
-            if (parts.Length > 0) double.TryParse(parts[0].Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out x);
-            if (parts.Length > 1) double.TryParse(parts[1].Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out y);
-            if (parts.Length > 2) double.TryParse(parts[2].Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out z);
-            return new VectorValue(x, y, z);
+            int pos = 0;
+            VectorValue group = ParseVectorGroup(s, ref pos);
+            if (group == null)
+            {
+                return new ReferenceValue(s);
+            }
+
+            while (pos < s.Length && char.IsWhiteSpace(s[pos]))
+            {
+                pos++;
+            }
+
+            if (pos < s.Length && s[pos] == '(')
+            {
+                VectorValue rotation = ParseVectorGroup(s, ref pos);
+                if (rotation != null)
+                {
+                    group.Rotation = rotation;
+                }
+            }
+
+            return group;
+        }
+
+        /// <summary>Parses one parenthesised group starting at <paramref name="pos"/>.</summary>
+        private static VectorValue ParseVectorGroup(string s, ref int pos)
+        {
+            if (pos >= s.Length || s[pos] != '(') return null;
+
+            int close = FindClosingParen(s, pos);
+            if (close < 0) return null;
+
+            string inner = s.Substring(pos + 1, close - pos - 1);
+            pos = close + 1;
+
+            var components = new List<SiiValue>();
+            string firstSeparator = ", ";
+
+            int semicolon = FindTopLevel(inner, ';');
+            if (semicolon >= 0)
+            {
+                string head = inner.Substring(0, semicolon);
+                string tail = inner.Substring(semicolon + 1);
+                firstSeparator = "; ";
+                components.Add(ParseNumber(head.Trim()));
+                foreach (string part in SplitTopLevel(tail, ','))
+                {
+                    components.Add(ParseNumber(part.Trim()));
+                }
+            }
+            else
+            {
+                foreach (string part in SplitTopLevel(inner, ','))
+                {
+                    components.Add(ParseNumber(part.Trim()));
+                }
+            }
+
+            return new VectorValue(components) { FirstSeparator = firstSeparator };
+        }
+
+        /// <summary>Parses a single numeric component of a vector.</summary>
+        private static SiiValue ParseNumber(string text)
+        {
+            string s = text.Trim();
+            if (s.Length == 0) return new StringValue(string.Empty);
+
+            if (s[0] == '&')
+            {
+                SiiValue hexFloat = ParseHexFloat(s);
+                if (hexFloat != null) return hexFloat;
+            }
+
+            if (IntegerRegex.IsMatch(s) &&
+                long.TryParse(s, NumberStyles.Integer, CultureInfo.InvariantCulture, out long l))
+            {
+                return new IntValue(l);
+            }
+
+            if (double.TryParse(s, NumberStyles.Float, CultureInfo.InvariantCulture, out double d))
+            {
+                return new FloatValue(d);
+            }
+
+            return new ReferenceValue(s);
+        }
+
+        /// <summary>Returns the index of the parenthesis closing the one at <paramref name="open"/>.</summary>
+        private static int FindClosingParen(string s, int open)
+        {
+            int depth = 0;
+            bool inString = false;
+
+            for (int i = open; i < s.Length; i++)
+            {
+                char c = s[i];
+                if (inString)
+                {
+                    if (c == '\\') { i++; continue; }
+                    if (c == '"') inString = false;
+                    continue;
+                }
+
+                if (c == '"') { inString = true; continue; }
+                if (c == '(') depth++;
+                else if (c == ')')
+                {
+                    depth--;
+                    if (depth == 0) return i;
+                }
+            }
+
+            return -1;
+        }
+
+        /// <summary>Finds a character that is not nested inside parentheses or quotes.</summary>
+        private static int FindTopLevel(string s, char target)
+        {
+            int depth = 0;
+            bool inString = false;
+
+            for (int i = 0; i < s.Length; i++)
+            {
+                char c = s[i];
+                if (inString)
+                {
+                    if (c == '\\') { i++; continue; }
+                    if (c == '"') inString = false;
+                    continue;
+                }
+
+                if (c == '"') { inString = true; continue; }
+                if (c == '(') { depth++; continue; }
+                if (c == ')') { depth--; continue; }
+                if (c == target && depth == 0) return i;
+            }
+
+            return -1;
+        }
+
+        /// <summary>Splits a string on a separator that is not nested.</summary>
+        private static List<string> SplitTopLevel(string s, char separator)
+        {
+            var result = new List<string>();
+            int depth = 0;
+            bool inString = false;
+            int start = 0;
+
+            for (int i = 0; i < s.Length; i++)
+            {
+                char c = s[i];
+                if (inString)
+                {
+                    if (c == '\\') { i++; continue; }
+                    if (c == '"') inString = false;
+                    continue;
+                }
+
+                if (c == '"') { inString = true; continue; }
+                if (c == '(') { depth++; continue; }
+                if (c == ')') { depth--; continue; }
+                if (c == separator && depth == 0)
+                {
+                    result.Add(s.Substring(start, i - start));
+                    start = i + 1;
+                }
+            }
+
+            result.Add(s.Substring(start));
+            return result;
         }
     }
 }

@@ -24,10 +24,9 @@ namespace Ets2SaveEditor.ViewModels
             if (_sf?.Document == null) return;
             var cities = new BuiltInGameData().Cities();
             var cargos = new BuiltInGameData().Cargoes();
-            var src = cities.Count > 0 ? cities[0].Token : "berlin";
-            var dst = cities.Count > 1 ? cities[1].Token : "paris";
-            var cargo = cargos.Count > 0 ? cargos[0].Token : "oil";
-            JobOffer.Create(_sf.Document, null, src, dst, cargo, 10000);
+            var target = cities.Count > 0 ? cities[0].Token : "berlin";
+            var cargo = cargos.Count > 0 ? cargos[0].Token : "cargo.haulie";
+            JobOffer.Create(_sf.Document, null, target, cargo, string.Empty);
             Refresh();
         }
 

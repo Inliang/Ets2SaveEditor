@@ -21,6 +21,6 @@ namespace Ets2SaveEditor.ViewModels
         private void Buy(Garage? g) { g?.Buy(); Refresh(); }
 
         [RelayCommand]
-        private void Upgrade(Garage? g) { if (g != null) g.UpgradeTo(g.Upgrade + 1); Refresh(); }
+        private void ResetProductivity(Garage? g) { g?.ResetProductivity(); Refresh(); }
     }
 }

@@ -105,8 +105,8 @@ namespace Ets2SaveEditor.ViewModels
                 Trailer.ApplyToModel();
                 Freight.ApplyToModel();
                 CurrentSave.Save(CurrentSave.Path, Settings.AutoBackup);
-                StatusText = "已保存：" + CurrentSave.Path;
-                _dialogs.ShowMessage("保存成功。游戏下次加载时会自动重新压缩该存档。");
+                StatusText = "已保存（明文 SII）：" + CurrentSave.Path;
+                _dialogs.ShowMessage(BuildSaveMessage());
             }
             catch (Exception ex)
             {
@@ -128,13 +128,28 @@ namespace Ets2SaveEditor.ViewModels
                 Trailer.ApplyToModel();
                 Freight.ApplyToModel();
                 CurrentSave.Save(path, Settings.AutoBackup);
-                StatusText = "已另存为：" + path;
-                _dialogs.ShowMessage("另存为成功。");
+                StatusText = "已另存为（明文 SII）：" + path;
+                _dialogs.ShowMessage("另存为成功。" + Environment.NewLine + BuildSaveMessage());
             }
             catch (Exception ex)
             {
                 _dialogs.ShowError("保存失败：" + ex.Message);
             }
+        }
+
+        /// <summary>
+        /// Builds the message shown after a successful save. The game cannot
+        /// read re-encrypted containers, therefore the file is written as
+        /// plaintext SII and the original (encrypted) file is backed up.
+        /// </summary>
+        private string BuildSaveMessage()
+        {
+            string message = "已保存为明文 SII 格式，游戏可直接读取该存档。";
+            if (!string.IsNullOrEmpty(CurrentSave?.LastBackupPath))
+            {
+                message += Environment.NewLine + "原加密存档已备份为：" + CurrentSave.LastBackupPath;
+            }
+            return message;
         }
 
         [RelayCommand]

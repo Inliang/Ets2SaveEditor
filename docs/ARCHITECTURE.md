@@ -31,8 +31,16 @@
 
 `SiiFormatDetector` 按首字节判定：
 - 以 `SiiNunit` 开头 → 明文（`Plaintext`）。
-- 否则尝试 `ZLibStream` 解压；解压结果以 `SiiNunit` 开头 → `Zlib` 成功。
-- 仍失败 → 标注 `Binary/3NK`（P2 扩展点，v1 抛明确异常不破坏原文件）。
+- 以 `ScsC` 开头 → 加密容器（`Encrypted`）：AES-256-CBC/PKCS7 解密 → zlib 解压 → 载荷再判断。
+- 以 `BSII` 开头 → 二进制 SII（`Binary`），交由 `SiiBsiiDecoder` 转换。
+- 否则尝试 `ZLibStream` 解压；解压结果以 `SiiNunit` / `BSII` 开头 → `Zlib` 成功。
+- 仍失败 → 标注 `Unknown`（抛明确异常，不破坏原文件）。
+
+> **重要（真实存档实证）**：现代 ETS2/ATS 存档为 `ScsC` 容器，容器头 56 字节：
+> `[0,4)` 魔数 `ScsC`、`[4,36)` 32 字节 HMAC-SHA256（密钥未公开，**不可复现**）、
+> `[36,52)` 16 字节 IV、`[52,56)` 解压后明文长度、`[56,)` AES-256-CBC 密文。
+> 解密解压后的载荷是**二进制 `BSII`**，需由 `SiiBsiiDecoder` 转换为 SII 文本。
+> 由于 HMAC 无法重新生成，**保存一律写明文 SII**（游戏引擎可直接读取），并在覆盖加密源文件前强制备份。
 
 ---
 
@@ -53,25 +61,27 @@
 | 相对路径 | 职责 |
 | --- | --- |
 | `src/Ets2SaveEditor.Core/Common/Constants.cs` | 命名空间常量、SII 头字符串 `SiiNunit`、关键 unit 类型名（`bank` / `game` / `garage` / `vehicle` / `trailer` / `job_offer_data` / `economy`）、备份扩展名等共享常量 |
-| `src/Ets2SaveEditor.Core/Sii/Model/SiiValue.cs` | 抽象值类型 `SiiValue` 及子类 `IntValue` / `FloatValue` / `StringValue` / `BoolValue` / `VectorValue` / `ReferenceValue` / `ArrayValue`（含 `SiiValueKind` 枚举） |
+| `src/Ets2SaveEditor.Core/Sii/Model/SiiValue.cs` | 抽象值类型 `SiiValue` 及子类 `IntValue` / `FloatValue`（含 `IsHex` 十六进制浮点标记）/ `StringValue` / `BoolValue` / `VectorValue` / `ReferenceValue` / `ArrayValue`（含 `SiiValueKind` 枚举） |
+| `src/Ets2SaveEditor.Core/Sii/Model/SiiValueExtensions.cs` | 值读取辅助扩展：`AsId` / `AsDouble` / `AsLong` / `IsHexFloat` |
 | `src/Ets2SaveEditor.Core/Sii/Model/SiiAttribute.cs` | 通用属性（Name / Value / IsArray / Order / RawText 透传原文） |
-| `src/Ets2SaveEditor.Core/Sii/Model/SiiUnit.cs` | 通用 unit（Type / Id / 有序 Attributes，Get/Set/GetOrCreate 方法） |
+| `src/Ets2SaveEditor.Core/Sii/Model/SiiUnit.cs` | 通用 unit（Type / Id / 有序 Attributes，Get/Set/GetOrCreate 方法，数组读写辅助） |
 | `src/Ets2SaveEditor.Core/Sii/Model/SiiDocument.cs` | 顶层文档（Header / 有序 Units，按 Id / Type 查询） |
-| `src/Ets2SaveEditor.Core/Sii/SiiFormatDetector.cs` | 格式枚举 `SiiFormat`、首字节检测、zlib 解压 |
-| `src/Ets2SaveEditor.Core/Sii/SiiParser.cs` | 明文 SII 文本 → `SiiDocument`（逐 unit / 逐 attribute 解析，未知结构原样保留） |
-| `src/Ets2SaveEditor.Core/Sii/SiiSerializer.cs` | `SiiDocument` → 明文 SII 文本（无损写回） |
+| `src/Ets2SaveEditor.Core/Sii/SiiFormatDetector.cs` | 格式枚举 `SiiFormat`、首字节检测（`ScsC` / `SiiNunit` / `BSII` / zlib）、AES-256-CBC 解密、zlib 解压 |
+| `src/Ets2SaveEditor.Core/Sii/SiiBsiiDecoder.cs` | **二进制 `BSII` 解码器**：结构定义块 / 数据块、编码字符串（38 进制）、nameless id（16 位分组）、ORDINAL 查找表、PLACEMENT 偏移还原、IEEE754 十六进制浮点、**无符号类型最大值 → `nil` 哨兵** → SII 文本 |
+| `src/Ets2SaveEditor.Core/Sii/SiiParser.cs` | 明文 SII 文本 → `SiiDocument`（逐 unit / 逐 attribute 解析，数组索引、`&hex` 浮点、向量 / placement，未知结构原样保留） |
+| `src/Ets2SaveEditor.Core/Sii/SiiSerializer.cs` | `SiiDocument` → 明文 SII 文本（无损写回，格式与游戏自身输出一致） |
 | `src/Ets2SaveEditor.Core/Sii/SiiFormatException.cs` | 解析 / 格式相关自定义异常 |
 | `src/Ets2SaveEditor.Core/Domain/IUnitCollection.cs` | 类型化访问接口：按 type / id 取 `SiiUnit`，供包装类复用 |
-| `src/Ets2SaveEditor.Core/Domain/TypedUnits/Bank.cs` | 类型化包装：`MoneyAccount` / `BankLoan` |
-| `src/Ets2SaveEditor.Core/Domain/TypedUnits/Player.cs` | 类型化包装：`Experience` / `Level`（由 XP 阈值推导）/ 技能（`LongDist` / `Heavy` / `Fragile` / `Urgent` / `EcoDriving` 等，属性名待校验） |
-| `src/Ets2SaveEditor.Core/Domain/TypedUnits/Garage.cs` | 类型化包装：`Status` / `Location` / `Upgrade` |
-| `src/Ets2SaveEditor.Core/Domain/TypedUnits/Vehicle.cs` | 类型化包装：`EngineWear` / `ChassisWear` / ... / `Fuel` / `FuelCapacity`（修理→置 0，加油→置满） |
-| `src/Ets2SaveEditor.Core/Domain/TypedUnits/Trailer.cs` | 类型化包装：磨损系列属性 |
-| `src/Ets2SaveEditor.Core/Domain/TypedUnits/JobOffer.cs` | 类型化包装（`job_offer_data`）：`SourceCity` / `TargetCity` / `Cargo` / `Reward` |
-| `src/Ets2SaveEditor.Core/Domain/TypedUnits/Economy.cs` | 类型化包装：`VisitedCities` 等 |
-| `src/Ets2SaveEditor.Core/Domain/SaveFile.cs` | 聚合单一存档：Path / Format / Document / IsLoaded；`Load()` / `Save()`；暴露 `GetBank()` / `GetPlayer()` / `GetGarages()` 等类型化入口 |
+| `src/Ets2SaveEditor.Core/Domain/TypedUnits/Bank.cs` | 类型化包装（`bank`）：`Money`（`money_account`）/ `LoanLimit` / `Loan` / `CoinInsuranceRatio` / `AccidentSeverity` 等 |
+| `src/Ets2SaveEditor.Core/Domain/TypedUnits/Player.cs` | 类型化包装（`economy` + `player`）：`Experience`（`experience_points`）/ `Level` / 技能（`LongDist` / `Heavy` / `Fragile` / `Urgent` / `EcoDriving`）/ `HqCity` / `OwnedTrucks` 等 |
+| `src/Ets2SaveEditor.Core/Domain/TypedUnits/Garage.cs` | 类型化包装（`garage`）：`Status` / `Productivity` / `City` / `Vehicles` / `Drivers` / `Trailers` 及其数量 |
+| `src/Ets2SaveEditor.Core/Domain/TypedUnits/Vehicle.cs` | 类型化包装（`vehicle`）：`EngineWear` / `ChassisWear` / `TransmissionWear` / `CabinWear` / `WheelWear` / `Fuel`（`fuel_relative`）/ `Odometer` / `LicensePlate`；`Repair()` 归零磨损，`Refuel()` 置满 |
+| `src/Ets2SaveEditor.Core/Domain/TypedUnits/Trailer.cs` | 类型化包装（`trailer`）：`BodyWear` / `ChassisWear` / `WheelWear` / `CargoDamage` / `CargoMass` / `Definition`；`Repair()` |
+| `src/Ets2SaveEditor.Core/Domain/TypedUnits/JobOffer.cs` | 类型化包装（`job_offer_data`）：`TargetCity` / `Cargo` / `Truck` / `TrailerVariant` / `Urgency` / `DistanceKm` / `UnitsCount` / `FillRatio` |
+| `src/Ets2SaveEditor.Core/Domain/TypedUnits/Economy.cs` | 类型化包装（`economy`）：`VisitedCities` / `ExperiencePoints` / `TotalDistance` / `TotalFuelLitres` / `Adr` 等 |
+| `src/Ets2SaveEditor.Core/Domain/SaveFile.cs` | 聚合单一存档：Path / Format / LoadedFormat / LastBackupPath / Document / IsLoaded；`Load()` / `Save()`（**原子写入**；加密源文件强制备份）；暴露 `GetBank()` / `GetPlayer()` / `GetGarages()` 等类型化入口 |
 | `src/Ets2SaveEditor.Core/Persistence/SaveLocationFinder.cs` | 枚举本地（`文档/Euro Truck Simulator 2/...`）与 Steam（`userdata/<uid>/227300/remote/...`）存档路径，返回 `SaveSlot` 列表 |
-| `src/Ets2SaveEditor.Core/Persistence/BackupService.cs` | 保存前备份（`Backup(path, enabled)`），生成 `.bak.<timestamp>` |
+| `src/Ets2SaveEditor.Core/Persistence/BackupService.cs` | 保存前备份（`Backup(path)`），生成 `.bak.<yyyyMMddHHmmssfff>`（毫秒精度 + 序号后缀，**绝不覆盖已有备份**） |
 | `src/Ets2SaveEditor.Core/GameData/GameDataModel.cs` | 静态实体 `City` / `Cargo` / `Company` |
 | `src/Ets2SaveEditor.Core/GameData/IGameDataProvider.cs` | 游戏数据提供器接口 |
 | `src/Ets2SaveEditor.Core/GameData/BuiltInGameData.cs` | 内置少量城市 / 货物 / 公司（注明待扩充） |
@@ -117,6 +127,7 @@ classDiagram
     }
     class FloatValue {
         +double Value
+        +bool IsHex
     }
     class StringValue {
         +string Value
@@ -125,9 +136,9 @@ classDiagram
         +bool Value
     }
     class VectorValue {
-        +double X
-        +double Y
-        +double Z
+        +List~SiiValue~ Components
+        +string FirstSeparator
+        +VectorValue Rotation
     }
     class ReferenceValue {
         +string TargetId
@@ -175,9 +186,13 @@ classDiagram
 ```mermaid
 classDiagram
     class SiiFormatDetector {
-        <<enum>> SiiFormat { Plaintext, Zlib, Binary, Unknown }
+        <<enum>> SiiFormat { Plaintext, Zlib, Encrypted, Binary, Unknown }
         +SiiFormat Detect(byte[] raw)
-        +string DecompressZlib(byte[] raw)
+        +string Decode(byte[] raw, SiiFormat format)
+    }
+    class SiiBsiiDecoder {
+        +const string Magic
+        +string Decode(byte[] binary)
     }
     class SiiParser {
         +SiiDocument Parse(string text)
@@ -190,10 +205,12 @@ classDiagram
     class SaveFile {
         +string Path
         +SiiFormat Format
+        +SiiFormat LoadedFormat
+        +string LastBackupPath
         +SiiDocument Document
         +bool IsLoaded
         +void Load(string path)
-        +void Save(string path)
+        +void Save(string path, bool backup)
         +Bank GetBank()
         +Player GetPlayer()
         +List~Garage~ GetGarages()
@@ -232,8 +249,11 @@ classDiagram
         +SiiUnitWrapper(SiiUnit unit, SiiDocument doc)
     }
     class Bank {
-        +long MoneyAccount
-        +long BankLoan
+        +long Money
+        +long LoanLimit
+        +long Loan
+        +double CoinInsuranceRatio
+        +double AccidentSeverity
     }
     class Player {
         +long Experience
@@ -243,32 +263,49 @@ classDiagram
         +int Fragile
         +int Urgent
         +int EcoDriving
+        +string HqCity
     }
     class Garage {
-        +string Status
-        +string Location
-        +int Upgrade
+        +int Status
+        +double Productivity
+        +string City
+        +List~string~ Vehicles
+        +List~string~ Drivers
+        +List~string~ Trailers
     }
     class Vehicle {
         +double EngineWear
         +double ChassisWear
+        +double TransmissionWear
+        +double CabinWear
+        +double WheelWear
         +double Fuel
-        +double FuelCapacity
+        +long Odometer
+        +string LicensePlate
         +void Repair()
         +void Refuel()
     }
     class Trailer {
-        +double Wear
+        +double BodyWear
+        +double ChassisWear
+        +double WheelWear
+        +double CargoDamage
         +void Repair()
     }
     class JobOffer {
-        +string SourceCity
         +string TargetCity
         +string Cargo
-        +long Reward
+        +string Truck
+        +string TrailerVariant
+        +int Urgency
+        +int DistanceKm
+        +int UnitsCount
+        +double FillRatio
     }
     class Economy {
         +List~string~ VisitedCities
+        +long ExperiencePoints
+        +long TotalDistance
     }
     SiiUnitWrapper <|-- Bank
     SiiUnitWrapper <|-- Player
@@ -472,26 +509,31 @@ graph TD
 ## 7. 共享知识（跨文件约定）
 
 - **命名空间**：Core 采用 `Ets2SaveEditor.Core.{Sii|Domain|Persistence|GameData}`；WPF 采用 `Ets2SaveEditor.{ViewModels|Views|Services|Converters}`。
-- **SII 数值规则**：整数统一 `long`（避免大金额溢出）；浮点 / 磨损统一 `double`；向量 `(x, y, z)`；引用为**无引号**的 nameless id。
+- **SII 数值规则**：整数统一 `long`（避免大金额溢出）；浮点 / 磨损统一 `double`；向量 `(x, y, z)`、四元数向量 `(w; x, y, z)`、placement `(x, y, z) (w; a, b, c)`；引用为**无引号**的 nameless id。
+- **浮点表示（关键）**：游戏自身**从不写十进制小数**，浮点只以两种形式出现：整数值（`0`、`1`）或 IEEE754 单精度位模式（`&3e117d8d`）。解析与序列化都必须遵循该规则，否则游戏无法读回。`FloatValue.IsHex` 记录该标记。
+- **nil 哨兵（关键）**：无符号整型的**类型最大值**表示「无值」，游戏写作 `nil`（UINT16→`0xFFFF`、UINT32/UINT32_ALT→`0xFFFFFFFF`、UINT64→`ulong.MaxValue`）。解码器必须还原为 `nil`，否则会出现 `4294967295` 这类游戏不接受的数字。
 - **字符串转义**：属性值双引号包裹，内部 `\"`、换行等按 SII 规则转义；序列化时优先使用解析阶段保留的 `RawText` 兜底，确保字节级无损。
+- **字符串表示风格**：同一字段可能是裸写引用（`scania_s_2024e`）也可能是带引号字符串（`"sanbuilders.london"`）。写回时用 `SiiUnit.SetScalarPreserveStyle()` 保持原有风格，避免产生无谓的文本差异。
 - **透传约定（关键）**：解析器对任意未识别的 unit / attribute / value **原样保留**；类型化包装只读写已知属性，绝不删除或重排未知字段——这是存档不损坏的根本保证。
-- **单位约定**：金钱 / 经验使用游戏内原生单位；坐标为米制（与 SII 一致）；磨损范围 0.0（全新）~1.0（报废），修理即写 0、加油即写 `fuel_capacity`。
+- **单位约定**：金钱 / 经验使用游戏内原生单位；坐标为米制（与 SII 一致）；磨损范围 0.0（全新）~1.0（报废），修理即写 0、加油即写 `fuel_relative` = 1。
 - **等级推导**：`Level` 由 `Experience`（XP）经内置阈值表推导；阈值表内置为 `Player` 静态字典，待真实存档校验。
 - **MVVM 约定**：VM 通过 `CommunityToolkit.Mvvm` 生成属性 / 命令；**VM 绝不引用 View**；`SaveFile` 作为唯一可绑定模型源；长耗时操作（加载 / 保存）使用 `AsyncRelayCommand` 并避免阻塞 UI 线程。
-- **备份命名**：`<name>.sii.bak.<yyyyMMddHHmmss>`；默认开关由 `SettingsViewModel.AutoBackup` 控制，保留最近 N 份（N 待定，默认 5）。
+- **备份命名**：`<name>.sii.bak.<yyyyMMddHHmmssfff>`；时间戳为**毫秒**精度，重名时自动追加 `-1` / `-2` … 序号，且 `File.Copy(overwrite: false)` **绝不覆盖已有备份**。原始加密存档不可再生（HMAC 密钥未公开），备份是唯一安全网；覆盖 `ScsC` 源文件时**强制备份**，与 `AutoBackup` 开关无关。
+- **原子写入**：保存先写同目录临时文件 `<name>.sii.tmp`（写完 flush 到盘），再用 `File.Move(overwrite: true)` 原子替换目标；异常时删除临时文件。目标文件要么是旧的完整内容，要么是新的完整内容，绝不出现半截文件。
 - **错误策略**：任何解析 / 解压失败都**抛明确异常、不写入原文件**，UI 给予友好提示，原存档保持只读未动。
 
 ---
 
 ## 8. 待明确事项（需在真实存档上校验）
 
-1. **字段名校验（高优先）**：以下属性名以真实 `game.sii` / `economy.sii` / `info.sii` 为准，v1 须抽样校验：
-   - 金钱：`bank` unit 的 `bank` 还是 `money_account`（PRD 两处表述不一致，需统一）。
-   - 贷款：`bank_loan`。
-   - 等级 / 经验：`game`（或 `player`）unit 的 `experience`；等级是否直接存字段还是需要 XP 推导。
-   - 技能：`long_dist` / `heavy` / `fragile` / `urgent` / `ecodriving` 等属性名与取值范围（0–6）。
-   - 车库：`garage` unit 的 `status` / `location` / `upgrade` 取值含义。
-   - 卡车磨损：`vehicle` unit 中 `wear_chassis` / `wear_engine` / `wear_transmission` / `wear_cabin` 等具体键。
+1. **字段名校验（已在真实存档上完成）**：以下属性名均以真实 `game.sii`（`ScsC` + `BSII`）抽样核对通过：
+   - 金钱：`bank` unit 的 `money_account`（INT64）。
+   - 贷款：`bank` unit 的 `loans`（ID 数组，指向 `bank_loan` unit）；`loan_limit` 为授信额度。
+   - 等级 / 经验：**`economy` unit** 的 `experience_points`（UINT32），技能 `long_dist` / `heavy` / `fragile` / `urgent` / `ecodriving` 同在该 unit（0–6）。
+   - 车库：`garage` unit 的 `vehicles` / `drivers` / `trailers`（ID 数组）、`status`（真实存档恒为 3）、`profit_log`、`productivity`。
+   - 卡车磨损：`vehicle` unit 的 `engine_wear` / `transmission_wear` / `cabin_wear` / `chassis_wear`（FLOAT，十六进制浮点）+ `wheels_wear`（数组）；剩余油量在 `fuel_relative`。
+   - 挂车：`trailer` unit 的 `trailer_definition` / `trailer_body_wear` / `chassis_wear` / `wheels_wear`。
+   - 货运：`job_offer_data` unit 的 `target` / `cargo` / `company_truck` / `urgency` / `units_count` / `fill_ratio` / `trailer_place`。
 2. **二进制 / 3NK 格式（P2）**：v1 仅明文 + zlib；`SiiFormatDetector` 已预留 `Binary` / `Unknown` 分支，后续接入参考项目 `SII_Decrypt.dll` 的另两种格式解析。
 3. **Steam 路径探测方式**：注册表（`HKEY_CURRENT_USER\Software\Valve\Steam` 的 `SteamPath`）vs 常见路径规则；建议「注册表优先 + 手动指定兜底」。
 4. **备份策略默认开关与保留数量**：默认是否开启、保留份数、命名规则（见 §7）。

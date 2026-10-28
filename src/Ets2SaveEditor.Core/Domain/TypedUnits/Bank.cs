@@ -5,8 +5,11 @@ using Ets2SaveEditor.Core.Sii.Model;
 namespace Ets2SaveEditor.Core.Domain.TypedUnits
 {
     /// <summary>
-    /// Typed wrapper around the <c>bank</c> unit. Reads/writes only the known
-    /// fields; the rest of the unit is preserved by the underlying model.
+    /// Typed wrapper around the <c>bank</c> unit. The modern save format keeps
+    /// the balance in <c>money_account</c> (INT64) and the outstanding loans in
+    /// the <c>loans</c> array (references to <c>bank_loan</c> units).
+    /// Reads/writes only the known fields; the rest of the unit is preserved
+    /// by the underlying model.
     /// </summary>
     public class Bank
     {
@@ -23,36 +26,83 @@ namespace Ets2SaveEditor.Core.Domain.TypedUnits
         }
 
         /// <summary>
-        /// Account balance. In ETS2 the <c>bank</c> unit stores the balance under
-        /// the field named "bank" as well.
+        /// Account balance (<c>money_account</c>).
         /// </summary>
         public long Money
         {
-            get { return _unit != null ? _unit.GetLong("bank") : 0; }
-            set { if (_unit != null) _unit.SetScalar("bank", value); }
+            get { return _unit != null ? _unit.GetLong(Constants.BankMoneyAttribute) : 0; }
+            set { if (_unit != null) _unit.SetScalar(Constants.BankMoneyAttribute, value); }
         }
 
         /// <summary>
-        /// Outstanding bank loan. Summed across all <c>bank_loan</c> units'
-        /// "amount" field; setting it updates the first such unit.
+        /// Credit limit granted by the bank (<c>loan_limit</c>).
+        /// </summary>
+        public long LoanLimit
+        {
+            get { return _unit != null ? _unit.GetLong(Constants.BankLoanLimitAttribute) : 0; }
+            set { if (_unit != null) _unit.SetScalar(Constants.BankLoanLimitAttribute, value); }
+        }
+
+        /// <summary>Whether the player currently overdrawn the account.</summary>
+        public bool Overdraft
+        {
+            get { return _unit != null && _unit.GetBool("overdraft"); }
+            set { if (_unit != null) _unit.SetScalar("overdraft", value); }
+        }
+
+        /// <summary>Whether the bank app is enabled for this profile.</summary>
+        public bool AppEnabled
+        {
+            get { return _unit != null && _unit.GetBool("app_enabled"); }
+            set { if (_unit != null) _unit.SetScalar("app_enabled", value); }
+        }
+
+        /// <summary>Coinsurance ratio (<c>coinsurance_ratio</c>, 0..1).</summary>
+        public double CoinInsuranceRatio
+        {
+            get { return _unit != null ? _unit.GetDouble("coinsurance_ratio") : 0; }
+            set { if (_unit != null) _unit.SetFloat("coinsurance_ratio", value); }
+        }
+
+        /// <summary>Fixed coinsurance fee (<c>coinsurance_fixed</c>).</summary>
+        public long CoinInsuranceFixed
+        {
+            get { return _unit != null ? _unit.GetLong("coinsurance_fixed") : 0; }
+            set { if (_unit != null) _unit.SetScalar("coinsurance_fixed", value); }
+        }
+
+        /// <summary>Severity of the latest accident (<c>accident_severity</c>).</summary>
+        public double AccidentSeverity
+        {
+            get { return _unit != null ? _unit.GetDouble("accident_severity") : 0; }
+            set { if (_unit != null) _unit.SetFloat("accident_severity", value); }
+        }
+
+        /// <summary>
+        /// Outstanding bank loan. The <c>bank</c> unit only stores references to
+        /// <c>bank_loan</c> units in its <c>loans</c> array, so the total is
+        /// summed up from the referenced units.
         /// </summary>
         public long Loan
         {
             get
             {
-                if (_doc == null) return 0;
+                if (_unit == null || _doc == null) return 0;
                 long total = 0;
-                foreach (var loan in _doc.GetUnitsByType("bank_loan"))
+                foreach (var item in _unit.GetArrayItems(Constants.BankLoansAttribute))
                 {
-                    total += loan.GetLong("amount");
+                    string id = item.AsId();
+                    if (string.IsNullOrEmpty(id)) continue;
+                    var loanUnit = _doc.GetUnitById(id);
+                    if (loanUnit != null) total += loanUnit.GetLong("amount");
                 }
                 return total;
             }
             set
             {
-                if (_doc == null) return;
-                var loan = _doc.GetFirstByType("bank_loan");
-                if (loan != null) loan.SetScalar("amount", value);
+                if (_unit == null || _doc == null) return;
+                var loanUnit = _doc.GetFirstByType(Constants.BankLoanType);
+                if (loanUnit != null) loanUnit.SetScalar("amount", value);
             }
         }
 

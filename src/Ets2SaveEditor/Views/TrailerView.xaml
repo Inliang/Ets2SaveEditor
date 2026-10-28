@@ -14,7 +14,12 @@
         <DataGrid ItemsSource="{Binding Items}" AutoGenerateColumns="False" IsReadOnly="False">
             <DataGrid.Columns>
                 <DataGridTextColumn Header="标识" Binding="{Binding Unit.Id}" IsReadOnly="True" Width="*"/>
-                <DataGridTextColumn Header="磨损" Binding="{Binding Wear, StringFormat=P0}" IsReadOnly="True" Width="*"/>
+                <DataGridTextColumn Header="车厢磨损" Binding="{Binding BodyWear, StringFormat=P0}" IsReadOnly="True" Width="*"/>
+                <DataGridTextColumn Header="底盘磨损" Binding="{Binding ChassisWear, StringFormat=P0}" IsReadOnly="True" Width="*"/>
+                <DataGridTextColumn Header="轮胎磨损" Binding="{Binding WheelWear, StringFormat=P0}" IsReadOnly="True" Width="*"/>
+                <DataGridTextColumn Header="货物损伤" Binding="{Binding CargoDamage, StringFormat=P0}" IsReadOnly="True" Width="*"/>
+                <DataGridTextColumn Header="货物重量(kg)" Binding="{Binding CargoMass, StringFormat=F0}" IsReadOnly="True" Width="120"/>
+                <DataGridTextColumn Header="型号" Binding="{Binding Definition}" IsReadOnly="True" Width="2*"/>
             </DataGrid.Columns>
         </DataGrid>
     </DockPanel>
