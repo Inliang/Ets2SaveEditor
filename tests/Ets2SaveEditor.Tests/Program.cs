@@ -87,6 +87,7 @@ namespace Ets2SaveEditor.Tests
             failures += TestBuiltInGameData();
             failures += TestCargoNames();
             failures += TestDocNumbers();
+            failures += TestUiMenuEnable();
             failures += TestNullReference();
             failures += TestRealSave();
 
@@ -2948,6 +2949,138 @@ namespace Ets2SaveEditor.Tests
                 dir = dir.Parent;
             }
             return null;
+        }
+
+        // ------------------------------------------------------------------
+        // WPF：菜单里的保存项必须与工具栏一致。
+        // ------------------------------------------------------------------
+
+        /// <summary>
+        /// 校验菜单里的「保存 / 另存为…」与工具栏按钮的可用状态一致。
+        /// <para>
+        /// 这一项此前**只有 QA 的运行时探针覆盖过，仓库测试里一次都没有** ——
+        /// 也就是说谁把这两个菜单项的 <c>IsEnabled="{Binding HasLoadedSave}"</c>
+        /// 弄掉了，仓库测试仍然是全绿的。
+        /// </para>
+        /// <para>
+        /// WPF 的三个坑（QA 实测踩出来的）：
+        /// ① <c>Application</c> 全进程只能有一个实例；
+        /// ② 窗口必须在 **STA 线程**上创建；
+        /// ③ 必须先调 <c>App.InitializeComponent()</c>，否则 MainWindow.xaml 里的
+        /// <c>StaticResource</c> 找不到，构造直接抛异常。
+        /// </para>
+        /// </summary>
+        private static int TestUiMenuEnable()
+        {
+            int failures = 0;
+
+            if (!File.Exists(RealSavePath))
+            {
+                Console.WriteLine("[uimenu] SKIP: real save not found");
+                return 0;
+            }
+
+            string dir = CreateTempDir("uimenu");
+            string copy = Path.Combine(dir, "uimenu_copy.sii");
+            File.Copy(RealSavePath, copy, true);   // 只操作副本
+
+            int inner = 0;
+            var thread = new System.Threading.Thread(() =>
+            {
+                try
+                {
+                    inner = RunUiMenuCheck(copy);
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine("FAIL: WPF 窗口测试抛异常：" + ex.GetType().Name + ": " + ex.Message);
+                    inner = 1;
+                }
+            });
+            thread.SetApartmentState(System.Threading.ApartmentState.STA);
+            thread.Start();
+            thread.Join();
+
+            return failures + inner;
+        }
+
+        /// <summary>在 STA 线程上执行的 WPF 断言主体。</summary>
+        private static int RunUiMenuCheck(string savePath)
+        {
+            int failures = 0;
+
+            // 坑 ①：Application 全进程只能有一个实例；坑 ③：必须先 InitializeComponent()。
+            if (System.Windows.Application.Current == null)
+            {
+                var app = new App();
+                app.InitializeComponent();
+            }
+
+            var window = new MainWindow();
+
+            // MainWindow 的构造函数是「先 InitializeComponent()、再赋 DataContext」，
+            // WPF 会把「DataContext 变了」的绑定刷新排到 Dispatcher 队列里，
+            // 所以这里要 Pump 一下才能读到绑定生效后的 IsEnabled。
+            PumpDispatcher();
+
+            // x:Name 生成的字段是 internal，用反射取。
+            var miSave = GetUiElement(window, "MiSave");
+            var miSaveAs = GetUiElement(window, "MiSaveAs");
+            var btnSave = GetUiElement(window, "BtnSave");
+            var btnSaveAs = GetUiElement(window, "BtnSaveAs");
+            if (miSave == null || miSaveAs == null || btnSave == null || btnSaveAs == null)
+            {
+                Console.WriteLine("FAIL: 找不到菜单/工具栏控件（MiSave / MiSaveAs / BtnSave / BtnSaveAs）");
+                return 1;
+            }
+
+            // 未加载存档 → 四个控件都应禁用。
+            bool disabled = !miSave.IsEnabled && !miSaveAs.IsEnabled &&
+                            !btnSave.IsEnabled && !btnSaveAs.IsEnabled;
+            Console.WriteLine($"[uimenu] 未加载存档时四个控件都禁用 = {disabled}");
+            if (!disabled)
+            {
+                Console.WriteLine("FAIL: 未加载存档时菜单/工具栏的保存项没有禁用");
+                failures++;
+            }
+
+            // 载入存档 → 四个控件都应可用，且菜单与工具栏状态一致。
+            window.VM.LoadFile(savePath);
+            PumpDispatcher();
+
+            bool enabled = miSave.IsEnabled && miSaveAs.IsEnabled &&
+                           btnSave.IsEnabled && btnSaveAs.IsEnabled;
+            bool consistent = miSave.IsEnabled == btnSave.IsEnabled &&
+                              miSaveAs.IsEnabled == btnSaveAs.IsEnabled;
+            Console.WriteLine($"[uimenu] 加载后四个控件都可用 = {enabled}，菜单与工具栏一致 = {consistent}");
+            if (!enabled || !consistent)
+            {
+                Console.WriteLine("FAIL: 加载存档后菜单/工具栏的保存项没有同步启用");
+                failures++;
+            }
+
+            return failures;
+        }
+
+        /// <summary>取窗口里 x:Name 命名的控件（字段是 internal，只能反射）。</summary>
+        private static System.Windows.UIElement? GetUiElement(object window, string name)
+        {
+            var field = window.GetType().GetField(
+                name,
+                System.Reflection.BindingFlags.Instance |
+                System.Reflection.BindingFlags.NonPublic |
+                System.Reflection.BindingFlags.Public);
+            return field?.GetValue(window) as System.Windows.UIElement;
+        }
+
+        /// <summary>把 Dispatcher 队列里排队的更新跑完（绑定刷新可能排队）。</summary>
+        private static void PumpDispatcher()
+        {
+            var frame = new System.Windows.Threading.DispatcherFrame();
+            System.Windows.Threading.Dispatcher.CurrentDispatcher.BeginInvoke(
+                System.Windows.Threading.DispatcherPriority.Background,
+                new Action(() => frame.Continue = false));
+            System.Windows.Threading.Dispatcher.PushFrame(frame);
         }
 
         /// <summary>
