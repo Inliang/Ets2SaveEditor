@@ -187,6 +187,82 @@ namespace Ets2SaveEditor.Core.Domain.TypedUnits
         public string CargoName => CargoCatalogue.DisplayName(Cargo);
 
         /// <summary>
+        /// Display name of the receiving company (e.g. <c>Stokes</c>).
+        /// <para>
+        /// The offer stores the destination as <c>&lt;brand&gt;.&lt;city&gt;</c>.
+        /// The brand part is resolved through the brand table extracted from
+        /// the game data files; when that fails the token is shown in a
+        /// readable form instead.
+        /// </para>
+        /// </summary>
+        public string TargetCompanyName
+        {
+            get
+            {
+                string brand = TargetBrand;
+                if (string.IsNullOrEmpty(brand)) return string.Empty;
+
+                // 品牌表里的键是 company.permanent.<brand>
+                string name = GameData.GameNames.Lookup(
+                    GameData.GameNames.Company, "company.permanent." + brand);
+                if (!string.IsNullOrEmpty(name)) return name;
+
+                return Titleize(brand);
+            }
+        }
+
+        /// <summary>
+        /// Display name of the company truck (e.g. <c>DAF 6x2 A</c>).
+        /// <para>
+        /// The save file stores a model token such as <c>daf_6x2_a</c>. The
+        /// game's own model names are not part of the save file, so the token
+        /// is turned into a readable form: the manufacturer is separated from
+        /// the axle layout.
+        /// </para>
+        /// </summary>
+        public string TruckName
+        {
+            get
+            {
+                string truck = Truck;
+                if (string.IsNullOrEmpty(truck)) return string.Empty;
+
+                string manufacturer = truck;
+                string rest = string.Empty;
+                int underscore = truck.IndexOf('_');
+                if (underscore > 0)
+                {
+                    manufacturer = truck.Substring(0, underscore);
+                    rest = truck.Substring(underscore + 1);
+                }
+
+                string result = Titleize(manufacturer);
+                if (!string.IsNullOrEmpty(rest)) result += " " + Titleize(rest);
+                return result;
+            }
+        }
+
+        /// <summary>
+        /// Turns a token into a readable form: underscores become spaces and
+        /// every word starts with a capital letter.
+        /// </summary>
+        private static string Titleize(string token)
+        {
+            if (string.IsNullOrEmpty(token)) return string.Empty;
+
+            var parts = token.Split('_');
+            var builder = new System.Text.StringBuilder();
+            foreach (var part in parts)
+            {
+                if (string.IsNullOrEmpty(part)) continue;
+                if (builder.Length > 0) builder.Append(' ');
+                builder.Append(char.ToUpperInvariant(part[0]));
+                builder.Append(part.Substring(1));
+            }
+            return builder.ToString();
+        }
+
+        /// <summary>
         /// Creates a new <c>job_offer_data</c> unit with the complete field
         /// set of the modern format and appends it to the document.
         /// <para>

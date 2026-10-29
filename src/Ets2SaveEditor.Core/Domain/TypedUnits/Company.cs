@@ -68,6 +68,39 @@ namespace Ets2SaveEditor.Core.Domain.TypedUnits
         /// </summary>
         public string ShortReference => Brand + "." + CityToken;
 
+        /// <summary>
+        /// Identifier of the company's permanent definition, e.g.
+        /// <c>company.permanent.acc</c> (from the <c>permanent_data</c> attribute).
+        /// </summary>
+        public string PermanentDataId
+        {
+            get { return _unit != null ? _unit.GetReference("permanent_data") : string.Empty; }
+        }
+
+        /// <summary>
+        /// Display name of the company (e.g. <c>ACC</c>).
+        /// <para>
+        /// The save file only stores identifiers; the display names live in
+        /// the game's data files and are extracted into
+        /// <see cref="GameData.GameNames.Company"/> by
+        /// <c>tools/extract_names.py</c>. When the company cannot be resolved
+        /// the brand token is returned instead.
+        /// </para>
+        /// </summary>
+        public string DisplayName
+        {
+            get
+            {
+                string name = GameData.GameNames.Lookup(GameData.GameNames.Company, PermanentDataId);
+                if (!string.IsNullOrEmpty(name)) return name;
+
+                // 回退：品牌 token 本身（去掉 company.permanent. 前缀后的部分）
+                string brand = Brand;
+                if (string.IsNullOrEmpty(brand)) return Id;
+                return char.ToUpperInvariant(brand[0]) + brand.Substring(1).Replace('_', ' ');
+            }
+        }
+
         /// <summary>Whether the player has discovered this company.</summary>
         public bool Discovered
         {
@@ -157,7 +190,13 @@ namespace Ets2SaveEditor.Core.Domain.TypedUnits
         /// <see cref="ToString"/> is used instead.
         /// </para>
         /// </summary>
-        public override string ToString() => ShortReference;
+        public override string ToString()
+        {
+            // 下拉框里显示「公司名 · 城市」，比原始标识可读得多。
+            string city = CityName;
+            if (string.IsNullOrEmpty(city)) return DisplayName;
+            return DisplayName + " · " + city;
+        }
 
         /// <summary>
         /// Returns all companies of the document.

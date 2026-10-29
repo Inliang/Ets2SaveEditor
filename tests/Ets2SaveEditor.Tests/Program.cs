@@ -75,6 +75,8 @@ namespace Ets2SaveEditor.Tests
             failures += TestCustomJobOffer();
             failures += TestLevelTable();
             failures += TestLevelInvariants();
+            failures += TestGameNames();
+            failures += TestGarageOwnership();
             failures += TestRealSave();
 
             Console.WriteLine(failures == 0 ? "ALL TESTS PASSED" : $"{failures} TEST(S) FAILED");
@@ -1632,6 +1634,152 @@ namespace Ets2SaveEditor.Tests
                 Console.WriteLine($"FAIL: {label} expected {expected}, got {actual}");
                 failures++;
             }
+        }
+
+        /// <summary>
+        /// 校验名称解析、车库归属判定与「只看车库」过滤。
+        /// <para>
+        /// 这些数据都来自真实存档：游戏里存的全是 token，显示名在游戏自己的
+        /// 数据文件里（由 tools/extract_names.py 提取到 GameNames 表）。
+        /// </para>
+        /// </summary>
+        private static int TestGameNames()
+        {
+            int failures = 0;
+
+            // 1) 货物名：token -> 可读名称
+            string cargoName = CargoCatalogue.DisplayName("cargo.gummy_bears");
+            bool cargoOk = cargoName == "Gummy Bears";
+            Console.WriteLine($"[names] cargo.gummy_bears -> '{cargoName}' (expect Gummy Bears)");
+            if (!cargoOk)
+            {
+                Console.WriteLine("FAIL: cargo display name wrong: " + cargoName);
+                failures++;
+            }
+
+            // 未收录的货物应回退到可读的 token 形式，而不是空串
+            string fallback = CargoCatalogue.DisplayName("cargo.not_a_real_cargo");
+            bool fallbackOk = !string.IsNullOrEmpty(fallback) &&
+                              fallback.IndexOf("not a real cargo", StringComparison.OrdinalIgnoreCase) >= 0;
+            Console.WriteLine($"[names] unknown cargo -> '{fallback}'");
+            if (!fallbackOk)
+            {
+                Console.WriteLine("FAIL: unknown cargo should fall back to a readable token");
+                failures++;
+            }
+
+            // 2) 品牌名：company.permanent.<brand>
+            string brand = GameNames.Lookup(GameNames.Company, "company.permanent.acc");
+            bool brandOk = brand == "ACC";
+            Console.WriteLine($"[names] company.permanent.acc -> '{brand}' (expect ACC)");
+            if (!brandOk)
+            {
+                Console.WriteLine("FAIL: company display name wrong: " + brand);
+                failures++;
+            }
+
+            // 3) 名称表覆盖度
+            bool cargoTableOk = GameNames.Cargo.Count >= 300;
+            bool companyTableOk = GameNames.Company.Count >= 100;
+            Console.WriteLine($"[names] table sizes: cargo={GameNames.Cargo.Count} company={GameNames.Company.Count}");
+            if (!cargoTableOk) { Console.WriteLine("FAIL: cargo name table too small"); failures++; }
+            if (!companyTableOk) { Console.WriteLine("FAIL: company name table too small"); failures++; }
+
+            // 4) 显示时不应露出本地化占位符（表里保留原文，便于以后补全）
+            int placeholder = 0;
+            foreach (var kv in GameNames.Cargo)
+                if (!string.IsNullOrEmpty(GameNames.Lookup(GameNames.Cargo, kv.Key)) &&
+                    kv.Value.StartsWith("@@", StringComparison.Ordinal)) placeholder++;
+            foreach (var kv in GameNames.Company)
+                if (!string.IsNullOrEmpty(GameNames.Lookup(GameNames.Company, kv.Key)) &&
+                    kv.Value.StartsWith("@@", StringComparison.Ordinal)) placeholder++;
+            Console.WriteLine($"[names] placeholders leaking into display = {placeholder}");
+            if (placeholder != 0)
+            {
+                Console.WriteLine("FAIL: some display names are still localization placeholders");
+                failures++;
+            }
+
+            // 5) 只有 DLC 才提供的货物（本地化条目缺失）应回退成可读 token
+            string dlcOnly = CargoCatalogue.DisplayName("cargo.obsole.waste_cont");
+            bool dlcOk = !string.IsNullOrEmpty(dlcOnly) &&
+                          dlcOnly.IndexOf("@@", StringComparison.Ordinal) < 0;
+            Console.WriteLine($"[names] DLC-only cargo -> '{dlcOnly}'");
+            if (!dlcOk)
+            {
+                Console.WriteLine("FAIL: DLC-only cargo should fall back, not show a placeholder");
+                failures++;
+            }
+
+            return failures;
+        }
+
+        /// <summary>
+        /// 校验车库归属判定：存档里会保留玩家卖掉的车/挂车对应的单元，
+        /// 只有还停在车库车位上的才算拥有。
+        /// </summary>
+        private static int TestGarageOwnership()
+        {
+            int failures = 0;
+            if (!File.Exists(RealSavePath))
+            {
+                Console.WriteLine("[ownership] SKIP: real save not found");
+                return 0;
+            }
+
+            string dir = CreateTempDir("ownership");
+            string copy = Path.Combine(dir, "ownership_copy.sii");
+            File.Copy(RealSavePath, copy, true);   // 只操作副本
+
+            var sf = new SaveFile();
+            sf.Load(copy);
+
+            var vehicles = sf.GetVehicles();
+            var trailers = sf.GetTrailers();
+
+            int ownedVehicles = 0;
+            foreach (var v in vehicles) if (v.IsInGarage) ownedVehicles++;
+            int ownedTrailers = 0;
+            foreach (var t in trailers) if (t.IsInGarage) ownedTrailers++;
+
+            Console.WriteLine($"[ownership] vehicles total={vehicles.Count} inGarage={ownedVehicles}");
+            Console.WriteLine($"[ownership] trailers total={trailers.Count} inGarage={ownedTrailers}");
+
+            if (ownedVehicles <= 0 || ownedVehicles >= vehicles.Count)
+            {
+                Console.WriteLine("FAIL: vehicle ownership split looks wrong");
+                failures++;
+            }
+            if (ownedTrailers <= 0 || ownedTrailers >= trailers.Count)
+            {
+                Console.WriteLine("FAIL: trailer ownership split looks wrong");
+                failures++;
+            }
+
+            // 车库计数必须与实际停放的车辆数一致（数组里的 null 占位要排除）
+            int garageSum = 0;
+            foreach (var g in sf.GetGarages()) garageSum += g.VehicleCount;
+            Console.WriteLine($"[ownership] garage vehicle count sum = {garageSum}");
+            if (garageSum != ownedVehicles)
+            {
+                Console.WriteLine($"FAIL: garage counts ({garageSum}) != vehicles in garages ({ownedVehicles})");
+                failures++;
+            }
+
+            // 「只看车库」过滤：ViewModel 打开开关后列表应只剩拥有的车
+            var truckVm = new TruckViewModel();
+            truckVm.LoadFrom(sf);
+            int allCount = truckVm.Items.Count;
+            truckVm.OnlyInGarage = true;
+            int ownedCount = truckVm.Items.Count;
+            Console.WriteLine($"[ownership] viewmodel all={allCount} onlyInGarage={ownedCount}");
+            if (ownedCount != ownedVehicles)
+            {
+                Console.WriteLine($"FAIL: onlyInGarage filter count {ownedCount} != {ownedVehicles}");
+                failures++;
+            }
+
+            return failures;
         }
 
         private static int TestRealSave()

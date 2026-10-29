@@ -438,14 +438,32 @@ namespace Ets2SaveEditor.Core.GameData
         public const double DefaultRate = 0.48;
 
         /// <summary>
-        /// Returns a human-readable name for a cargo token. The game's own
-        /// display names are not stored in the save file, so the token is
-        /// shown in a readable form instead.
+        /// Returns a human-readable name for a cargo token.
+        /// <para>
+        /// The display names live in the game's own data files, not in the
+        /// save file. They are extracted into <see cref="GameNames.Cargo"/>
+        /// by <c>tools/extract_names.py</c>. When a token is not in that
+        /// table the token itself is shown in a readable form instead.
+        /// </para>
         /// </summary>
         public static string DisplayName(string cargoToken)
         {
             if (string.IsNullOrEmpty(cargoToken)) return string.Empty;
-            string name = cargoToken;
+
+            string name = GameNames.Lookup(GameNames.Cargo, cargoToken);
+            if (!string.IsNullOrEmpty(name)) return name;
+
+            // 回退：把 token 变成可读形式。先去掉命名空间前缀
+            // （cargo. / company. 等），再把下划线换成空格。
+            name = cargoToken;
+            foreach (string prefix in new[] { "cargo.", "company.", "trailer.", "brand." })
+            {
+                if (name.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                {
+                    name = name.Substring(prefix.Length);
+                    break;
+                }
+            }
             int dot = name.IndexOf('.');
             if (dot >= 0 && dot < name.Length - 1) name = name.Substring(dot + 1);
             return name.Replace('_', ' ');

@@ -52,6 +52,35 @@ namespace Ets2SaveEditor.ViewModels
         /// <summary>Company truck of a newly created job.</summary>
         [ObservableProperty] private string _newTruck = string.Empty;
 
+        /// <summary>
+        /// Cargos offered in the creation form: the token plus its display
+        /// name, so the user does not have to type game identifiers.
+        /// </summary>
+        [ObservableProperty] private ObservableCollection<CargoChoice> _cargoChoices = new();
+
+        /// <summary>Currently selected cargo in the creation form.</summary>
+        [ObservableProperty] private CargoChoice? _selectedCargo;
+
+        /// <summary>
+        /// One entry of the cargo picker: the game token and the readable name.
+        /// </summary>
+        public sealed class CargoChoice
+        {
+            public CargoChoice(string token, string name)
+            {
+                Token = token;
+                Name = name;
+            }
+
+            /// <summary>The game token written into the save (e.g. <c>cargo.haulie</c>).</summary>
+            public string Token { get; }
+
+            /// <summary>The readable name (e.g. <c>Haulier</c>).</summary>
+            public string Name { get; }
+
+            public override string ToString() => Name;
+        }
+
         private SaveFile? _sf;
 
         public void LoadFrom(SaveFile sf)
@@ -77,6 +106,23 @@ namespace Ets2SaveEditor.ViewModels
 
             Items = new ObservableCollection<JobOffer>(Limit(_sf.GetFreightJobs()));
 
+            // 货物下拉框：用游戏自带的货物目录，显示可读名称。
+            var cargoList = new List<CargoChoice>();
+            foreach (var token in CargoCatalogue.Tokens)
+            {
+                string name = CargoCatalogue.DisplayName(token);
+                if (string.IsNullOrEmpty(name)) continue;
+                cargoList.Add(new CargoChoice(token, name));
+            }
+            cargoList.Sort((a, b) => string.Compare(a.Name, b.Name, StringComparison.CurrentCulture));
+            CargoChoices = new ObservableCollection<CargoChoice>(cargoList);
+
+            if (SelectedCargo == null || !CargoChoices.Contains(SelectedCargo))
+            {
+                SelectedCargo = CargoChoices.FirstOrDefault(c => c.Token == NewCargo)
+                                ?? CargoChoices.FirstOrDefault();
+            }
+
             // Only companies that already publish at least one offer are
             // interesting for creating a new one; the game only shows
             // companies the player has discovered.
@@ -93,6 +139,11 @@ namespace Ets2SaveEditor.ViewModels
             }
 
             Status = $"共 {TotalOfferCount} 条货运市场任务（显示前 {Items.Count} 条），{Companies.Count} 家公司";
+        }
+
+        partial void OnSelectedCargoChanged(CargoChoice? value)
+        {
+            if (value != null) NewCargo = value.Token;
         }
 
         /// <summary>

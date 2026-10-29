@@ -6,20 +6,35 @@
              mc:Ignorable="d" d:DesignHeight="420" d:DesignWidth="600">
     <DockPanel>
         <Border DockPanel.Dock="Top" Style="{StaticResource CardStyle}" Margin="0,0,0,8">
-            <StackPanel Orientation="Horizontal">
-                <Button Content="全部修理" Command="{Binding RepairAllCommand}"/>
-                <TextBlock Text="磨损以百分比显示（只读），点“全部修理”可一键归零。" VerticalAlignment="Center" Margin="12,0,0,0" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"/>
+            <StackPanel>
+                <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                    <Button Content="全部修理" Command="{Binding RepairAllCommand}" Margin="0,0,8,0"/>
+                    <CheckBox Content="只看车库里的" IsChecked="{Binding OnlyInGarage}" VerticalAlignment="Center" Margin="0,0,12,0"/>
+                    <TextBlock VerticalAlignment="Center" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"
+                               Text="也可以在表格右侧「操作」列里只修理某一辆。"/>
+                </StackPanel>
+                <TextBlock Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"
+                           Text="说明：型号取自存档里 trailer_def 单元的 source_name（游戏的资源路径），已转成可读名称。"/>
             </StackPanel>
         </Border>
         <DataGrid ItemsSource="{Binding Items}" AutoGenerateColumns="False" IsReadOnly="False">
             <DataGrid.Columns>
-                <DataGridTextColumn Header="标识" Binding="{Binding Unit.Id}" IsReadOnly="True" Width="180"/>
-                <DataGridTextColumn Header="车厢磨损" Binding="{Binding BodyWear, StringFormat=P0}" IsReadOnly="True" Width="Auto"/>
-                <DataGridTextColumn Header="底盘磨损" Binding="{Binding ChassisWear, StringFormat=P0}" IsReadOnly="True" Width="Auto"/>
-                <DataGridTextColumn Header="轮胎磨损" Binding="{Binding WheelWear, StringFormat=P0}" IsReadOnly="True" Width="Auto"/>
-                <DataGridTextColumn Header="货物损伤" Binding="{Binding CargoDamage, StringFormat=P0}" IsReadOnly="True" Width="Auto"/>
+                <DataGridTextColumn Header="型号" Binding="{Binding ModelName}" IsReadOnly="True" Width="200"/>
+                <DataGridTextColumn Header="车牌" Binding="{Binding LicensePlate}" Width="150"/>
+                <DataGridTextColumn Header="车厢磨损" Binding="{Binding BodyWear, StringFormat=P0}" IsReadOnly="True" Width="90"/>
+                <DataGridTextColumn Header="底盘磨损" Binding="{Binding ChassisWear, StringFormat=P0}" IsReadOnly="True" Width="90"/>
+                <DataGridTextColumn Header="轮胎磨损" Binding="{Binding WheelWear, StringFormat=P0}" IsReadOnly="True" Width="90"/>
+                <DataGridTextColumn Header="货物损伤" Binding="{Binding CargoDamage, StringFormat=P0}" IsReadOnly="True" Width="90"/>
                 <DataGridTextColumn Header="货物重量(kg)" Binding="{Binding CargoMass, StringFormat=F0}" IsReadOnly="True" Width="120"/>
-                <DataGridTextColumn Header="型号" Binding="{Binding Definition}" IsReadOnly="True" Width="240"/>
+                <DataGridTemplateColumn Header="操作" Width="90">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <Button Content="修理" Padding="8,3"
+                                    Command="{Binding DataContext.RepairOneCommand, RelativeSource={RelativeSource AncestorType=DataGrid}}"
+                                    CommandParameter="{Binding}"/>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
             </DataGrid.Columns>
         </DataGrid>
     </DockPanel>

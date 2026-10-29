@@ -12,15 +12,15 @@
                 <WrapPanel>
                     <TextBlock Text="收货公司" VerticalAlignment="Center" Margin="0,0,6,0"/>
                     <TextBox Text="{Binding CompanyFilter, UpdateSourceTrigger=PropertyChanged}"
-                             Width="150" VerticalAlignment="Center" Margin="0,0,12,0"
-                             ToolTip="按公司标识或城市名筛选"/>
+                             Width="120" VerticalAlignment="Center" Margin="0,0,12,0"
+                             ToolTip="按公司名或城市名筛选"/>
                     <ComboBox ItemsSource="{Binding Companies}" SelectedItem="{Binding SelectedCompany}"
-                              Width="230" Margin="0,0,12,0"
-                              ToolTip="选择接收货物的公司（target）"/>
+                              Width="230" Margin="0,0,12,0" DisplayMemberPath="ToString"
+                              ToolTip="选择接收货物的公司"/>
                     <TextBlock Text="货物" VerticalAlignment="Center" Margin="0,0,6,0"/>
-                    <TextBox Text="{Binding NewCargo, UpdateSourceTrigger=PropertyChanged}"
-                             Width="140" VerticalAlignment="Center" Margin="0,0,12,0"
-                             ToolTip="货物标识，例如 cargo.haulie"/>
+                    <ComboBox ItemsSource="{Binding CargoChoices}" SelectedItem="{Binding SelectedCargo}"
+                              Width="180" Margin="0,0,12,0" DisplayMemberPath="ToString"
+                              ToolTip="选择货物种类"/>
                     <TextBlock Text="数量" VerticalAlignment="Center" Margin="0,0,6,0"/>
                     <TextBox Text="{Binding NewUnits, UpdateSourceTrigger=LostFocus}"
                              Width="50" VerticalAlignment="Center" Margin="0,0,12,0"/>
@@ -49,10 +49,10 @@
                   EnableRowVirtualization="True" VirtualizingPanel.IsVirtualizing="True"
                   VirtualizingPanel.VirtualizationMode="Recycling">
             <DataGrid.Columns>
-                <DataGridTextColumn Header="收货公司" Binding="{Binding Target}" Width="135"/>
-                <DataGridTextColumn Header="城市" Binding="{Binding TargetCityName}" Width="82"/>
-                <DataGridTextColumn Header="货物" Binding="{Binding CargoName}" Width="108"/>
-                <DataGridTextColumn Header="公司车辆" Binding="{Binding Truck}" Width="132"/>
+                <DataGridTextColumn Header="收货公司" Binding="{Binding TargetCompanyName}" Width="120"/>
+                <DataGridTextColumn Header="城市" Binding="{Binding TargetCityName}" Width="100"/>
+                <DataGridTextColumn Header="货物" Binding="{Binding CargoName}" Width="130"/>
+                <DataGridTextColumn Header="公司车辆" Binding="{Binding TruckName}" Width="140"/>
                 <DataGridTextColumn Header="距离(km)" Binding="{Binding DistanceKm}" Width="74"/>
                 <DataGridTextColumn Header="紧急度" Binding="{Binding Urgency}" Width="55"/>
                 <DataGridTextColumn Header="单位数" Binding="{Binding UnitsCount}" Width="58"/>

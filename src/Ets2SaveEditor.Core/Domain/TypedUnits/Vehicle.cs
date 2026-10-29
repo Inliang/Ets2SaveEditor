@@ -17,13 +17,79 @@ namespace Ets2SaveEditor.Core.Domain.TypedUnits
     public class Vehicle
     {
         private readonly SiiUnit _unit;
+        private readonly SiiDocument _document;
+        private string _garageId;
 
         /// <summary>The underlying SII unit.</summary>
         public SiiUnit Unit => _unit;
 
-        public Vehicle(SiiUnit unit)
+        public Vehicle(SiiUnit unit) : this(unit, null) { }
+
+        /// <summary>
+        /// Creates a wrapper that can also resolve the garage the vehicle
+        /// is parked in.
+        /// </summary>
+        public Vehicle(SiiUnit unit, SiiDocument document)
         {
             _unit = unit;
+            _document = document;
+        }
+
+        /// <summary>
+        /// Identifier of the garage this vehicle is parked in, or an empty
+        /// string when the vehicle is not in any garage.
+        /// <para>
+        /// A save file keeps a <c>vehicle</c> unit for every truck the player
+        /// ever owned — including the ones that were sold. Only the ones
+        /// referenced by a <c>garage</c> unit are actually owned right now.
+        /// </para>
+        /// </summary>
+        public string GarageId
+        {
+            get
+            {
+                if (_garageId != null) return _garageId;
+
+                _garageId = string.Empty;
+                if (_document == null || _unit == null) return _garageId;
+
+                string id = _unit.Id;
+                foreach (var garage in _document.GetUnitsByType(Constants.GarageType))
+                {
+                    foreach (var item in garage.GetArrayItems("vehicles"))
+                    {
+                        if (string.Equals(item.AsId(), id, System.StringComparison.Ordinal))
+                        {
+                            _garageId = garage.Id;
+                            return _garageId;
+                        }
+                    }
+                }
+                return _garageId;
+            }
+        }
+
+        /// <summary>
+        /// Whether the vehicle is currently parked in a garage (i.e. owned).
+        /// </summary>
+        public bool IsInGarage => !string.IsNullOrEmpty(GarageId);
+
+        /// <summary>
+        /// City the garage of this vehicle is in (readable name; empty when
+        /// the vehicle is not parked in a garage).
+        /// </summary>
+        public string GarageCity
+        {
+            get
+            {
+                string garage = GarageId;
+                if (string.IsNullOrEmpty(garage)) return string.Empty;
+                int dot = garage.LastIndexOf('.');
+                string token = dot >= 0 && dot < garage.Length - 1
+                    ? garage.Substring(dot + 1)
+                    : garage;
+                return GameData.CityCatalogue.DisplayName(token);
+            }
         }
 
         /// <summary>Engine wear (0..1).</summary>
@@ -81,10 +147,53 @@ namespace Ets2SaveEditor.Core.Domain.TypedUnits
         }
 
         /// <summary>License plate of the vehicle.</summary>
+        /// <summary>
+        /// License plate of the truck (e.g. <c>DW 853SA</c>).
+        /// <para>
+        /// The stored value may carry a country suffix
+        /// (<c>"DW 853SA|poland"</c>) and, for trailers that were never
+        /// registered, an HTML-formatted placeholder. Only the plain plate
+        /// part is returned so the table stays readable.
+        /// </para>
+        /// </summary>
         public string LicensePlate
         {
-            get { return _unit != null ? _unit.GetString("license_plate") : string.Empty; }
-            set { if (_unit != null) _unit.SetScalarPreserveStyle("license_plate", value); }
+            get
+            {
+                if (_unit == null) return string.Empty;
+                string plate = _unit.GetString("license_plate");
+                if (string.IsNullOrEmpty(plate)) return string.Empty;
+
+                // 未上牌的车用的是带 HTML 标签的占位文本
+                // （形如 "<align right=148><font ...>AF 3537</font></align>"），
+                // 逐层剥掉标签只留最内层的文字。
+                int open = plate.IndexOf('<');
+                while (open >= 0)
+                {
+                    int close = plate.IndexOf('>', open);
+                    if (close < 0) break;
+                    plate = plate.Substring(0, open) + plate.Substring(close + 1);
+                    open = plate.IndexOf('<');
+                }
+                int pipe = plate.IndexOf('|');
+                if (pipe >= 0) plate = plate.Substring(0, pipe);
+                return plate.Trim();
+            }
+            set
+            {
+                if (_unit == null) return;
+                string plate = value ?? string.Empty;
+                int pipe = plate.IndexOf('|');
+                if (pipe >= 0) plate = plate.Substring(0, pipe);
+
+                // 写回时保留原存档里的国家后缀（形如 "DW 853SA|poland"），
+                // 否则游戏读档时会认不出车牌所属国家。
+                string existing = _unit.GetString("license_plate");
+                int existingPipe = existing != null ? existing.IndexOf('|') : -1;
+                if (existingPipe >= 0) plate += existing.Substring(existingPipe);
+
+                _unit.SetScalarPreserveStyle("license_plate", plate);
+            }
         }
 
         private double GetWear(string name)
@@ -156,7 +265,7 @@ namespace Ets2SaveEditor.Core.Domain.TypedUnits
             if (doc == null) return list;
             foreach (var u in doc.GetUnitsByType(Constants.VehicleType))
             {
-                list.Add(new Vehicle(u));
+                list.Add(new Vehicle(u, doc));
             }
             return list;
         }

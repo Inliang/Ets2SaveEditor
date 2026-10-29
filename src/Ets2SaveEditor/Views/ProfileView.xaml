@@ -3,6 +3,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:views="clr-namespace:Ets2SaveEditor.Views"
              mc:Ignorable="d" d:DesignHeight="420" d:DesignWidth="520">
     <ScrollViewer Margin="0">
         <StackPanel>
@@ -41,33 +42,28 @@
 
             <Border Style="{StaticResource CardStyle}">
                 <StackPanel>
-                    <TextBlock Text="驾驶技能（0~6 级）" FontWeight="Bold" FontSize="15" Foreground="{StaticResource PrimaryBrush}" Margin="0,0,0,8"/>
-                    <StackPanel Orientation="Horizontal" Margin="0,3">
-                        <TextBlock Text="长途运输" Width="100" VerticalAlignment="Center"/>
-                        <Slider Minimum="0" Maximum="6" TickFrequency="1" Value="{Binding LongDist}" IsSnapToTickEnabled="True"/>
-                        <TextBlock Text="{Binding LongDist}" Width="24" VerticalAlignment="Center" Margin="8,0,0,0"/>
+                    <TextBlock Text="驾驶技能（点亮几枚即为几级，点击可增减）" FontWeight="Bold" FontSize="15" Foreground="{StaticResource PrimaryBrush}" Margin="0,0,0,10"/>
+                    <StackPanel Margin="0,0,0,10">
+                        <views:SkillIconControl Title="长途运输" SkillIndex="0"
+                                                 Level="{Binding LongDist, Mode=TwoWay}"/>
                     </StackPanel>
-                    <StackPanel Orientation="Horizontal" Margin="0,3">
-                        <TextBlock Text="重载货物" Width="100" VerticalAlignment="Center"/>
-                        <Slider Minimum="0" Maximum="6" TickFrequency="1" Value="{Binding Heavy}" IsSnapToTickEnabled="True"/>
-                        <TextBlock Text="{Binding Heavy}" Width="24" VerticalAlignment="Center" Margin="8,0,0,0"/>
+                    <StackPanel Margin="0,0,0,10">
+                        <views:SkillIconControl Title="重载货物" SkillIndex="1"
+                                                 Level="{Binding Heavy, Mode=TwoWay}"/>
                     </StackPanel>
-                    <StackPanel Orientation="Horizontal" Margin="0,3">
-                        <TextBlock Text="易碎品" Width="100" VerticalAlignment="Center"/>
-                        <Slider Minimum="0" Maximum="6" TickFrequency="1" Value="{Binding Fragile}" IsSnapToTickEnabled="True"/>
-                        <TextBlock Text="{Binding Fragile}" Width="24" VerticalAlignment="Center" Margin="8,0,0,0"/>
+                    <StackPanel Margin="0,0,0,10">
+                        <views:SkillIconControl Title="易碎品" SkillIndex="2"
+                                                 Level="{Binding Fragile, Mode=TwoWay}"/>
                     </StackPanel>
-                    <StackPanel Orientation="Horizontal" Margin="0,3">
-                        <TextBlock Text="高时效" Width="100" VerticalAlignment="Center"/>
-                        <Slider Minimum="0" Maximum="6" TickFrequency="1" Value="{Binding Urgent}" IsSnapToTickEnabled="True"/>
-                        <TextBlock Text="{Binding Urgent}" Width="24" VerticalAlignment="Center" Margin="8,0,0,0"/>
+                    <StackPanel Margin="0,0,0,10">
+                        <views:SkillIconControl Title="高时效" SkillIndex="3"
+                                                 Level="{Binding Urgent, Mode=TwoWay}"/>
                     </StackPanel>
-                    <StackPanel Orientation="Horizontal" Margin="0,3">
-                        <TextBlock Text="节油驾驶" Width="100" VerticalAlignment="Center"/>
-                        <Slider Minimum="0" Maximum="6" TickFrequency="1" Value="{Binding EcoDriving}" IsSnapToTickEnabled="True"/>
-                        <TextBlock Text="{Binding EcoDriving}" Width="24" VerticalAlignment="Center" Margin="8,0,0,0"/>
+                    <StackPanel Margin="0,0,0,10">
+                        <views:SkillIconControl Title="节油驾驶" SkillIndex="4"
+                                                 Level="{Binding EcoDriving, Mode=TwoWay}"/>
                     </StackPanel>
-                    <TextBlock Text="提示：修改后点顶部“保存”写回存档，游戏加载时会自动重新压缩。" Margin="0,12,0,0" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"/>
+                    <TextBlock Text="提示：修改后点顶部工具栏的「保存」写回存档，游戏加载时会自动重新压缩。" Margin="0,4,0,0" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"/>
                 </StackPanel>
             </Border>
         </StackPanel>

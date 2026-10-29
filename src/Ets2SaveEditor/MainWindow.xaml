@@ -25,6 +25,38 @@
             </StatusBarItem>
         </StatusBar>
 
+        <!-- 常驻工具栏：把「保存」等关键操作提到外面，不必再翻菜单 -->
+        <Border DockPanel.Dock="Top" Background="{StaticResource BgBrush}"
+                BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1"
+                Padding="8,6">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                <StackPanel Grid.Column="0" Orientation="Horizontal">
+                    <Button x:Name="BtnSave" Content="保存" Padding="18,7" MinWidth="88"
+                            FontWeight="Bold" Margin="0,0,8,0"
+                            Background="{StaticResource PrimaryBrush}" Foreground="White"
+                            BorderThickness="0" Cursor="Hand"
+                            IsEnabled="{Binding HasLoadedSave}"
+                            Click="MiSave_Click" ToolTip="保存到当前存档 (Ctrl+S)"/>
+                    <Button x:Name="BtnSaveAs" Content="另存为…" Padding="14,7" MinWidth="86"
+                            Margin="0,0,8,0" IsEnabled="{Binding HasLoadedSave}"
+                            Click="MiSaveAs_Click"
+                            ToolTip="把修改后的存档写到新的文件"/>
+                    <Button Content="打开…" Padding="14,7" MinWidth="86" Margin="0,0,8,0"
+                            Click="BtnBrowseFile_Click" ToolTip="打开一个 .sii 存档文件"/>
+                    <Button Content="打开文件夹…" Padding="14,7" MinWidth="100"
+                            Click="BtnOpenFolder_Click" ToolTip="打开存档所在文件夹"/>
+                </StackPanel>
+                <TextBlock Grid.Column="1" Text="{Binding LoadedPathText}"
+                           VerticalAlignment="Center" Margin="14,0,0,0"
+                           Foreground="{StaticResource MutedBrush}" TextTrimming="CharacterEllipsis"
+                           ToolTip="{Binding LoadedPathText}"/>
+            </Grid>
+        </Border>
+
         <Grid>
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*"/>

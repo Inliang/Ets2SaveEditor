@@ -54,6 +54,15 @@ namespace Ets2SaveEditor.ViewModels
         /// <summary>当前存档槽名称（未选中时显示「（无）」）。</summary>
         public string SlotDisplay => SelectedSlot?.SlotName ?? "（无）";
 
+        /// <summary>
+        /// 是否已加载存档——工具栏上的「保存」据此禁用，
+        /// 避免在没载入存档时误点保存。
+        /// </summary>
+        public bool HasLoadedSave => CurrentSave != null && CurrentSave.IsLoaded;
+
+        /// <summary>工具栏上显示的当前存档路径（未加载时为空）。</summary>
+        public string LoadedPathText => CurrentSave != null && CurrentSave.IsLoaded ? CurrentSave.Path : string.Empty;
+
         public ProfileViewModel Profile { get; } = new ProfileViewModel();
         public GaragesViewModel Garages { get; } = new GaragesViewModel();
         public TruckViewModel Truck { get; } = new TruckViewModel();
@@ -125,6 +134,13 @@ namespace Ets2SaveEditor.ViewModels
             string.Equals(game, "ATS", StringComparison.OrdinalIgnoreCase) ? "美卡 1" : "欧卡 2";
 
         partial void OnSelectedGameChanged(string value) => ApplyGameFilter();
+
+        /// <summary>存档载入/换档后刷新工具栏上依赖它的显示状态。</summary>
+        partial void OnCurrentSaveChanged(SaveFile? value)
+        {
+            OnPropertyChanged(nameof(HasLoadedSave));
+            OnPropertyChanged(nameof(LoadedPathText));
+        }
 
         partial void OnSelectedProfileChanged(SaveProfileItem? value)
         {

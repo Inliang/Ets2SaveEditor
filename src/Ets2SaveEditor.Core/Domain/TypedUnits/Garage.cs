@@ -27,6 +27,9 @@ namespace Ets2SaveEditor.Core.Domain.TypedUnits
         /// <summary>The underlying SII unit.</summary>
         public SiiUnit Unit => _unit;
 
+        /// <summary>Full identifier of the garage (e.g. <c>garage.calais</c>).</summary>
+        public string Id => _unit != null ? _unit.Id : string.Empty;
+
         public Garage(SiiUnit unit)
         {
             _unit = unit;
@@ -64,13 +67,50 @@ namespace Ets2SaveEditor.Core.Domain.TypedUnits
             }
         }
 
-        /// <summary>Identifiers of the vehicles parked in this garage.</summary>
+        /// <summary>
+        /// Readable name of the city the garage is in (e.g. <c>卡尔斯塔德</c>).
+        /// </summary>
+        public string CityName => GameData.CityCatalogue.DisplayName(City);
+
+        /// <summary>
+        /// Readable description of the garage status.
+        /// <para>
+        /// The game stores an internal flag; every garage of a real save
+        /// carries <see cref="RegularStatus"/>. The value itself has no
+        /// documented meaning, so it is shown as-is with a short hint.
+        /// </para>
+        /// </summary>
+        public string StatusText
+        {
+            get
+            {
+                int status = Status;
+                return status == RegularStatus
+                    ? status + "（正常）"
+                    : status.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            }
+        }
+
+        /// <summary>
+        /// Identifiers of the vehicles parked in this garage.
+        /// <para>
+        /// The game stores a fixed-size slot array in which unused slots hold
+        /// <c>null</c>. Those placeholders are skipped here so the count
+        /// reflects the vehicles that are actually there.
+        /// </para>
+        /// </summary>
         public List<string> Vehicles => GetIdList("vehicles");
 
-        /// <summary>Identifiers of the drivers hired in this garage.</summary>
+        /// <summary>
+        /// Identifiers of the drivers hired in this garage (unused slots hold
+        /// <c>null</c> and are skipped).
+        /// </summary>
         public List<string> Drivers => GetIdList("drivers");
 
-        /// <summary>Identifiers of the trailers parked in this garage.</summary>
+        /// <summary>
+        /// Identifiers of the trailers parked in this garage (unused slots hold
+        /// <c>null</c> and are skipped).
+        /// </summary>
         public List<string> Trailers => GetIdList("trailers");
 
         /// <summary>Number of vehicles parked in this garage.</summary>
@@ -82,13 +122,25 @@ namespace Ets2SaveEditor.Core.Domain.TypedUnits
         /// <summary>Number of trailers parked in this garage.</summary>
         public int TrailerCount => Trailers.Count;
 
+        /// <summary>
+        /// Reads an array of unit references and drops the empty slots.
+        /// <para>
+        /// The game pads the arrays with <c>null</c> for unused slots — the
+        /// placeholder is a reference whose target literally reads
+        /// <c>"null"</c>. Keeping those would make every garage look like it
+        /// owns five vehicles and five drivers.
+        /// </para>
+        /// </summary>
         private List<string> GetIdList(string attribute)
         {
             var result = new List<string>();
             if (_unit == null) return result;
             foreach (var item in _unit.GetArrayItems(attribute))
             {
-                result.Add(item.AsId());
+                string id = item.AsId();
+                if (string.IsNullOrEmpty(id)) continue;
+                if (string.Equals(id, "null", System.StringComparison.OrdinalIgnoreCase)) continue;
+                result.Add(id);
             }
             return result;
         }

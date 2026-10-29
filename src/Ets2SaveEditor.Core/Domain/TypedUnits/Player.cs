@@ -273,7 +273,10 @@ namespace Ets2SaveEditor.Core.Domain.TypedUnits
             if (unit == null) return result;
             foreach (var item in unit.GetArrayItems(attribute))
             {
-                result.Add(item.AsId());
+                string id = item.AsId();
+                if (string.IsNullOrEmpty(id)) continue;
+                if (string.Equals(id, "null", System.StringComparison.OrdinalIgnoreCase)) continue;
+                result.Add(id);
             }
             return result;
         }

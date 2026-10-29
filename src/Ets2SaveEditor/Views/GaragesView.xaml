@@ -6,17 +6,20 @@
              mc:Ignorable="d" d:DesignHeight="420" d:DesignWidth="600">
     <DockPanel>
         <Border DockPanel.Dock="Top" Style="{StaticResource CardStyle}" Margin="0,0,0,8">
-            <StackPanel Orientation="Horizontal">
-                <Button Content="设为可用" Command="{Binding BuyCommand}" CommandParameter="{Binding SelectedItem, ElementName=Dg}" Margin="0,0,8,0"/>
-                <Button Content="重置生产力" Command="{Binding ResetProductivityCommand}" CommandParameter="{Binding SelectedItem, ElementName=Dg}"/>
-                <TextBlock Text="说明：车库状态为游戏内部标记（真实存档中均为 3）；车辆/司机/挂车数量来自 vehicles、drivers、trailers 数组。" VerticalAlignment="Center" Margin="12,0,0,0" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"/>
+            <StackPanel>
+                <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                    <Button Content="设为可用" Command="{Binding BuyCommand}" CommandParameter="{Binding SelectedItem, ElementName=Dg}" Margin="0,0,8,0"/>
+                    <Button Content="重置生产力" Command="{Binding ResetProductivityCommand}" CommandParameter="{Binding SelectedItem, ElementName=Dg}"/>
+                </StackPanel>
+                <TextBlock Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"
+                           Text="说明：车辆 / 司机 / 挂车数量来自车库的 vehicles、drivers、trailers 数组（游戏用 null 占位空车位，这里已排除）。状态是游戏内部标记，真实存档中均为 3。"/>
             </StackPanel>
         </Border>
         <DataGrid x:Name="Dg" ItemsSource="{Binding Items}" AutoGenerateColumns="False" IsReadOnly="False">
             <DataGrid.Columns>
-                <DataGridTextColumn Header="标识" Binding="{Binding Unit.Id}" IsReadOnly="True" Width="230"/>
-                <DataGridTextColumn Header="城市" Binding="{Binding City}" IsReadOnly="True" Width="120"/>
-                <DataGridTextColumn Header="状态" Binding="{Binding Status}" Width="80"/>
+                <DataGridTextColumn Header="城市" Binding="{Binding CityName}" IsReadOnly="True" Width="130"/>
+                <DataGridTextColumn Header="标识" Binding="{Binding Id}" IsReadOnly="True" Width="180"/>
+                <DataGridTextColumn Header="状态" Binding="{Binding StatusText}" Width="110"/>
                 <DataGridTextColumn Header="车辆" Binding="{Binding VehicleCount}" IsReadOnly="True" Width="70"/>
                 <DataGridTextColumn Header="司机" Binding="{Binding DriverCount}" IsReadOnly="True" Width="70"/>
                 <DataGridTextColumn Header="挂车" Binding="{Binding TrailerCount}" IsReadOnly="True" Width="70"/>
