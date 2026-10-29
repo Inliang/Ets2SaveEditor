@@ -261,7 +261,7 @@ namespace Ets2SaveEditor.ViewModels
                 $"格式：{FormatText(CurrentSave.Format)}" + Environment.NewLine +
                 $"单元：{CurrentSave.Document?.Units.Count ?? 0} 个" + Environment.NewLine +
                 $"金钱：{Profile.Money:N0}" + Environment.NewLine +
-                $"经验：{Profile.Experience:N0}（{Profile.Level} 级）";
+                $"经验：{Profile.Experience:N0}（{Profile.LevelSummary}）";
         }
 
         /// <summary>把存档格式枚举转换为中文说明。</summary>

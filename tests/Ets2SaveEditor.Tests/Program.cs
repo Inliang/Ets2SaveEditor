@@ -1531,6 +1531,35 @@ namespace Ets2SaveEditor.Tests
                     Console.WriteLine("FAIL: level did not survive the save/reload round-trip");
                     failures++;
                 }
+
+                // 8) 直接编辑「目标等级」→ 应换算成该等级的累计经验值，并可存回存档。
+                vm2.Level = 75;
+                bool levelEditOk = vm2.Experience == Player.XpForLevel(75) && vm2.Level == 75;
+                Console.WriteLine($"[levelinv] target level edit: level=75 -> xp={vm2.Experience} (expect {Player.XpForLevel(75)})");
+                if (!levelEditOk)
+                {
+                    Console.WriteLine("FAIL: editing the target level did not convert to the matching XP");
+                    failures++;
+                }
+
+                // 9) 越界的「目标等级」：小于 1 应被忽略（不清零进度），大于满级应封顶。
+                vm2.Level = 0;
+                bool lowLevelOk = vm2.Experience == Player.XpForLevel(75) && vm2.Level == 75;
+                Console.WriteLine($"[levelinv] target level 0 ignored: xp={vm2.Experience} level={vm2.Level} (expect unchanged 75)");
+                if (!lowLevelOk)
+                {
+                    Console.WriteLine("FAIL: target level 0 should be ignored, not reset the progress");
+                    failures++;
+                }
+
+                vm2.Level = Player.MaxLevel + 10;
+                bool highLevelOk = vm2.Experience == Player.MaxLevelXp && vm2.Level == Player.MaxLevel;
+                Console.WriteLine($"[levelinv] target level overflow capped: xp={vm2.Experience} level={vm2.Level} (expect {Player.MaxLevel})");
+                if (!highLevelOk)
+                {
+                    Console.WriteLine("FAIL: target level above max should be capped");
+                    failures++;
+                }
             }
             else
             {

@@ -20,6 +20,7 @@
                             <RowDefinition Height="Auto"/>
                             <RowDefinition Height="Auto"/>
                             <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
                         </Grid.RowDefinitions>
                         <TextBlock Grid.Row="0" Grid.Column="0" Text="账户金钱" VerticalAlignment="Center" Margin="0,4"/>
                         <TextBox Grid.Row="0" Grid.Column="1" Text="{Binding Money}" Margin="0,4"/>
@@ -29,7 +30,12 @@
                         <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding LevelText}" VerticalAlignment="Center" FontWeight="Bold" Margin="0,4"/>
                         <TextBlock Grid.Row="3" Grid.Column="0" Text="距离下一级" VerticalAlignment="Center" Margin="0,4"/>
                         <TextBlock Grid.Row="3" Grid.Column="1" Text="{Binding LevelProgress}" VerticalAlignment="Center" Margin="0,4"/>
+                        <TextBlock Grid.Row="4" Grid.Column="0" Text="目标等级" VerticalAlignment="Center" Margin="0,4"/>
+                        <TextBox Grid.Row="4" Grid.Column="1" Text="{Binding Level}" Margin="0,4"
+                                 ToolTip="填写目标等级即可直接设置等级：会自动换算成该等级对应的累计经验值写入存档。"/>
                     </Grid>
+                    <TextBlock Text="提示：等级由经验值自动推导；填写「目标等级」可直接设置等级（会换算成对应的经验值）。"
+                               Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="0,8,0,0"/>
                 </StackPanel>
             </Border>
 
