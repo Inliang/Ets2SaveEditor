@@ -92,6 +92,7 @@ namespace Ets2SaveEditor.Tests
             failures += TestDocNumbers();
             failures += TestUiMenuEnable();
             failures += TestNoRealSavePath();
+            failures += TestDisplayName();
             failures += TestNullReference();
             failures += TestRealSave();
 
@@ -2089,8 +2090,12 @@ namespace Ets2SaveEditor.Tests
             }
 
             // 2) 按类型查找：集合内容与顺序都要一致。
+            //    遍历**文档里出现过的全部类型**（而不是抽查几种）—— 只查少数几种，
+            //    其余类型的索引条目一旦出错就不会被发现。
             int typeMismatch = 0;
-            foreach (string type in new[] { "vehicle", "garage", "trailer", "economy", "not_a_type" })
+            var docTypes = AllTypesOf(doc);
+            docTypes.Add("not_a_type");     // 不存在的类型必须返回空集合
+            foreach (string type in docTypes)
             {
                 List<SiiUnit> expected = LinearByType(doc, type);
                 List<SiiUnit> actual = doc.GetUnitsByType(type);
@@ -2100,7 +2105,7 @@ namespace Ets2SaveEditor.Tests
                     if (!ReferenceEquals(expected[i], actual[i])) { typeMismatch++; break; }
                 }
             }
-            Console.WriteLine($"[index] type lookup mismatches vs linear scan = {typeMismatch} (over 5 types)");
+            Console.WriteLine($"[index] type lookup mismatches vs linear scan = {typeMismatch} (over {docTypes.Count} types)");
             if (typeMismatch != 0)
             {
                 Console.WriteLine("FAIL: indexed type lookup differs from the linear scan");
@@ -2290,9 +2295,10 @@ namespace Ets2SaveEditor.Tests
                 failures++;
             }
 
-            // 2) 常见类型的结果要与线性扫描一致。
+            // 2) 全部类型的结果都要与线性扫描一致（真实存档里有 47 种类型）。
             int typeMismatch = 0;
-            foreach (string type in new[] { "garage", "vehicle", "trailer", "company", "job_offer_data", "economy" })
+            var saveTypes = AllTypesOf(doc);
+            foreach (string type in saveTypes)
             {
                 List<SiiUnit> expected = LinearByType(doc, type);
                 List<SiiUnit> actual = doc.GetUnitsByType(type);
@@ -2302,7 +2308,7 @@ namespace Ets2SaveEditor.Tests
                     if (!ReferenceEquals(expected[i], actual[i])) { typeMismatch++; break; }
                 }
             }
-            Console.WriteLine($"[index] real save: type mismatches = {typeMismatch}");
+            Console.WriteLine($"[index] real save: type mismatches = {typeMismatch} (over {saveTypes.Count} types)");
             if (typeMismatch != 0)
             {
                 Console.WriteLine("FAIL: real save type lookup mismatch count " + typeMismatch);
@@ -3094,11 +3100,13 @@ namespace Ets2SaveEditor.Tests
         /// <summary>
         /// 校验仓库源码里没有指向**真实存档目录**的硬编码路径。
         /// <para>
-        /// 背景：发布 v0.0.11 前后，真实存档 <c>save/1/game.sii</c> 曾被写成明文
-        /// SII（5.6 MB，ETS2 原生保存写的是加密 <c>ScsC</c>），同目录多出
-        /// <c>game.sii.bak.&lt;时间戳&gt;</c>。触发源排查未能定位，但结论是明确的：
-        /// <b>不能依赖「我知道它不会写」</b> —— 只要自动化程序加载了真实存档并渲染
-        /// 界面，就存在触发写入的路径。所以这条约束要由机器保证，而不是靠自觉。
+        /// 背景：本工具保存时写出的是**明文** SII，而原始加密存档不可再生（HMAC 密钥
+        /// 未公开）—— 一旦有程序往真实存档上写了哪怕一把，用户的加密原档就被明文顶替了。
+        /// 而**即使程序本身不调用保存，只要它加载了真实存档并渲染界面，就存在触发写入的
+        /// 路径**：不能依赖「我知道它不会写」。真实存档目录里那两份 5.3 MB 的明文
+        /// <c>game_backup.sii</c>（游戏自己保存时的旧档备份）说明这套存档历史上被以明文
+        /// 形式覆盖过，自动化程序误用真实存档是**真实存在的口子**（离屏渲染 / 截图工具
+        /// 最容易踩）。所以这条约束要由机器保证，而不是靠自觉。
         /// </para>
         /// <para>
         /// 两条检查：
@@ -3252,6 +3260,122 @@ namespace Ets2SaveEditor.Tests
                 dir = dir.Parent;
             }
             return null;
+        }
+
+        /// <summary>
+        /// 校验货物显示名的查表、跨源消歧与回退。
+        /// <para>
+        /// ① **跨组同名**：同一个显示名分别出现在权威表（<c>GameNames.Cargo</c>）
+        /// 与本地化兜底表（<c>GameNames.LocalizedCargo</c>）时，两边都要查得到，
+        /// 并且必须被消歧成两个不同的名字。
+        /// ② **尾段区分**：像 <c>cargo.concr_beams</c> / <c>cargo.concr_beams2</c>
+        /// 这种尾段不同的两个货物，加后缀后不再相同。
+        /// ③ **大小写不敏感**：查表用 <c>OrdinalIgnoreCase</c>，大小写变体也要命中。
+        /// ④ **目录外 token**：不在任何表里的 token 回退成可读形式，且不带
+        /// <c>cargo.</c> 前缀残留、不含 <c>@@</c> 占位符。
+        /// ⑤ **可选清单两两不重复**：清单里每个 token 的显示名都不重复。
+        /// </para>
+        /// </summary>
+        private static int TestDisplayName()
+        {
+            int failures = 0;
+
+            // ① 跨组同名：cargo.concr_beams 只在本地化表里（cn_concr_beams），
+            //    cargo.concr_beams2 在权威表里 —— 两者基础名都是 "Concrete Beams"。
+            string fromLocalized = GameNames.Lookup(GameNames.LocalizedCargo, "cargo.concr_beams");
+            string fromNames = GameNames.Lookup(GameNames.Cargo, "cargo.concr_beams2");
+            bool sameBase = fromLocalized.Length > 0 && fromLocalized == fromNames;
+            string nameA = CargoCatalogue.DisplayName("cargo.concr_beams");
+            string nameB = CargoCatalogue.DisplayName("cargo.concr_beams2");
+            bool crossOk = sameBase && nameA != nameB && nameA.Length > 0 && nameB.Length > 0;
+            Console.WriteLine($"[displayname] 跨源同名消歧 = {crossOk}  ('{nameA}' vs '{nameB}')");
+            if (!crossOk)
+            {
+                Console.WriteLine("FAIL: 同一显示名跨两个来源时没有被正确消歧");
+                failures++;
+            }
+
+            // ② 尾段区分：加后缀后两个名字必须不同，且都保留了基础名。
+            bool tailOk = nameA.StartsWith(fromLocalized, StringComparison.Ordinal) &&
+                          nameB.StartsWith(fromNames, StringComparison.Ordinal) &&
+                          nameA.Contains("cargo.concr_beams") &&
+                          nameB.Contains("cargo.concr_beams2") &&
+                          nameA != nameB;
+            Console.WriteLine($"[displayname] 尾段区分 = {tailOk}");
+            if (!tailOk)
+            {
+                Console.WriteLine("FAIL: 尾段不同的两个货物没有分别加后缀");
+                failures++;
+            }
+
+            // ③ 大小写不敏感：大小写变体要命中同一张表、得到同一个名字。
+            string upper = CargoCatalogue.DisplayName("CARGO.GUMMY_BEARS");
+            bool caseOk = upper == "Gummy Bears";
+            // 目录外 token 的回退形式沿用 token 自身的大小写（HW25C1 这类代号不该被
+            // 改成 Hw25c1），所以这里只要求「非空 + 不带前缀残留」。
+            string upperFallback = CargoCatalogue.DisplayName("CARGO.NOT_IN_ANY_TABLE");
+            bool caseFallbackOk = !string.IsNullOrWhiteSpace(upperFallback) &&
+                                 upperFallback.IndexOf("cargo.", StringComparison.OrdinalIgnoreCase) < 0;
+            Console.WriteLine($"[displayname] 大小写不敏感 = {caseOk && caseFallbackOk}  ('{upper}')");
+            if (!caseOk || !caseFallbackOk)
+            {
+                Console.WriteLine("FAIL: 显示名查表对大小写变体不一致");
+                failures++;
+            }
+
+            // ④ 目录外 token：回退成可读形式，不带前缀残留、不含占位符。
+            string outside = CargoCatalogue.DisplayName("cargo.some_unknown_cargo");
+            bool outsideOk = !string.IsNullOrWhiteSpace(outside) &&
+                             outside.IndexOf("cargo.", StringComparison.OrdinalIgnoreCase) < 0 &&
+                             outside.IndexOf("@@", StringComparison.Ordinal) < 0;
+            Console.WriteLine($"[displayname] 目录外 token 回退 = '{outside}'  ({outsideOk})");
+            if (!outsideOk)
+            {
+                Console.WriteLine("FAIL: 目录外 token 的回退显示名不可读");
+                failures++;
+            }
+
+            // ⑤ 可选清单两两不重复。
+            var names = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            int dup = 0;
+            int blank = 0;
+            foreach (string token in CargoCatalogue.SelectableTokens)
+            {
+                string name = CargoCatalogue.DisplayName(token);
+                if (string.IsNullOrWhiteSpace(name)) { blank++; continue; }
+                string? previous;
+                if (names.TryGetValue(name, out previous))
+                {
+                    dup++;
+                    Console.WriteLine($"  FAIL: '{token}' and '{previous}' both show as '{name}'");
+                }
+                else
+                {
+                    names[name] = token;
+                }
+            }
+            Console.WriteLine($"[displayname] 可选清单显示名重复 = {dup}，空白 = {blank}");
+            if (dup != 0 || blank != 0)
+            {
+                Console.WriteLine("FAIL: 可选清单的显示名有重复或空白");
+                failures++;
+            }
+
+            return failures;
+        }
+
+        /// <summary>文档里出现过的全部单元类型（去重、按字典序）。</summary>
+        private static List<string> AllTypesOf(SiiDocument doc)
+        {
+            var types = new List<string>();
+            var seen = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var unit in doc.Units)
+            {
+                if (unit == null) continue;
+                if (seen.Add(unit.Type)) types.Add(unit.Type);
+            }
+            types.Sort(StringComparer.Ordinal);
+            return types;
         }
 
         /// <summary>
