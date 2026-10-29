@@ -80,6 +80,8 @@ namespace Ets2SaveEditor.Tests
             failures += TestGameNames();
             failures += TestGarageOwnership();
             failures += TestDocumentIndex();
+            failures += TestCompanyFilter();
+            failures += TestCargoSelection();
             failures += TestNullReference();
             failures += TestRealSave();
 
@@ -2328,6 +2330,210 @@ namespace Ets2SaveEditor.Tests
             return string.Empty;
         }
 
+        // ------------------------------------------------------------------
+        // 货运市场：公司筛选与货物下拉框。
+        // ------------------------------------------------------------------
+
+        /// <summary>
+        /// 校验公司筛选：界面上显示的是「公司名 · 城市」，所以筛选必须同时
+        /// 匹配显示名、品牌名、公司 id 与城市名，且忽略大小写。
+        /// </summary>
+        private static int TestCompanyFilter()
+        {
+            int failures = 0;
+
+            string dir = CreateTempDir("filter");
+            string path = Path.Combine(dir, "filter.sii");
+            File.WriteAllText(path, FreightSample);
+
+            var sf = new SaveFile();
+            sf.Load(path);
+
+            var freight = new FreightMarketViewModel();
+            freight.LoadFrom(sf);
+
+            if (freight.Companies.Count != 2)
+            {
+                Console.WriteLine("FAIL: expected 2 companies, got " + freight.Companies.Count);
+                failures++;
+            }
+
+            // 显示名（界面上显示的就是它）。
+            CheckFilter(failures, freight, "NBFC", 1);
+            // 显示名的大小写变体。
+            CheckFilter(failures, freight, "nbfc", 1);
+            CheckFilter(failures, freight, "NbFc", 1);
+            // 品牌名。
+            CheckFilter(failures, freight, "stokes", 1);
+            // 公司 id。
+            CheckFilter(failures, freight, "company.volatile.nbfc.aberdeen", 1);
+            CheckFilter(failures, freight, "company.volatile", 2);
+            // 城市名（中文）。
+            CheckFilter(failures, freight, "阿伯丁", 1);
+            CheckFilter(failures, freight, "爱尔福特", 1);
+            // 界面上显示的完整文字。
+            CheckFilter(failures, freight, "NBFC · 阿伯丁", 1);
+            // 查不到的东西。
+            CheckFilter(failures, freight, "不存在的公司", 0);
+            // 空筛选词：不过滤。
+            CheckFilter(failures, freight, "", 2);
+
+            // 刷新后必须保留用户选中的公司（公司列表每次都是新的包装对象，
+            // 只能按 id 匹配，否则每次刷新都被重置成第一项）。
+            freight.CompanyFilter = "";
+            var nbfc = freight.Companies.FirstOrDefault(c => c.Id == "company.volatile.nbfc.aberdeen");
+            freight.SelectedCompany = nbfc;
+            freight.CompanyFilter = "nbfc";   // 筛选后仍然包含选中的公司
+            bool keptOk = freight.SelectedCompany != null &&
+                          freight.SelectedCompany.Id == "company.volatile.nbfc.aberdeen";
+            Console.WriteLine($"[filter] selected company kept after filter change = {keptOk}");
+            if (!keptOk)
+            {
+                Console.WriteLine("FAIL: the selected company was reset by a refresh");
+                failures++;
+            }
+
+            // 选中的公司被筛掉了：退回筛选结果里的第一项。
+            freight.CompanyFilter = "stokes";
+            bool fallbackOk = freight.SelectedCompany != null &&
+                              freight.SelectedCompany.Id == "company.volatile.stokes.erfurt";
+            Console.WriteLine($"[filter] selected company falls back when filtered out = {fallbackOk}");
+            if (!fallbackOk)
+            {
+                Console.WriteLine("FAIL: the selected company was not adjusted after filtering it out");
+                failures++;
+            }
+
+            return failures;
+        }
+
+        /// <summary>设置筛选词并断言命中数量。</summary>
+        private static void CheckFilter(int failures, FreightMarketViewModel vm, string filter, int expected)
+        {
+            vm.CompanyFilter = filter;
+            int actual = vm.Companies.Count;
+            Console.WriteLine($"[filter] '{filter}' -> {actual} (expect {expected})");
+            if (actual != expected)
+            {
+                Console.WriteLine($"FAIL: filter '{filter}' matched {actual} companies, expected {expected}");
+                failures++;
+            }
+        }
+
+        /// <summary>
+        /// 校验新建任务表单里的货物选择：下拉框与货物 token 双向同步，
+        /// 刷新（改公司筛选词也会触发刷新）后必须保留用户已选的货物。
+        /// </summary>
+        private static int TestCargoSelection()
+        {
+            int failures = 0;
+
+            string dir = CreateTempDir("cargo");
+            string path = Path.Combine(dir, "cargo.sii");
+            File.WriteAllText(path, FreightSample);
+
+            var sf = new SaveFile();
+            sf.Load(path);
+
+            var freight = new FreightMarketViewModel();
+            freight.LoadFrom(sf);
+
+            // 1) 载入后下拉框与默认货物一致。
+            bool defaultOk = freight.SelectedCargo != null &&
+                             freight.SelectedCargo.Token == freight.NewCargo;
+            Console.WriteLine($"[cargo] default selection ok = {defaultOk} (token={freight.NewCargo})");
+            if (!defaultOk)
+            {
+                Console.WriteLine("FAIL: the cargo picker did not select the default cargo");
+                failures++;
+            }
+
+            // 2) 下拉框选中项 → 货物 token。
+            var gummy = freight.CargoChoices.FirstOrDefault(c => c.Token == "cargo.gummy_bears");
+            if (gummy == null)
+            {
+                Console.WriteLine("FAIL: cargo.gummy_bears is missing from the picker");
+                failures++;
+            }
+            else
+            {
+                freight.SelectedCargo = gummy;
+                bool downOk = freight.NewCargo == "cargo.gummy_bears";
+                Console.WriteLine($"[cargo] picker -> token: {freight.NewCargo}");
+                if (!downOk)
+                {
+                    Console.WriteLine("FAIL: picking a cargo did not update the cargo token");
+                    failures++;
+                }
+            }
+
+            // 3) 刷新（改筛选词也会触发刷新）后必须保留用户的选择。
+            freight.CompanyFilter = "stokes";
+            bool keptOk = freight.SelectedCargo != null &&
+                          freight.SelectedCargo.Token == "cargo.gummy_bears" &&
+                          freight.NewCargo == "cargo.gummy_bears";
+            Console.WriteLine($"[cargo] selection kept after filter change = {keptOk}");
+            if (!keptOk)
+            {
+                Console.WriteLine("FAIL: the cargo selection was reset by a refresh");
+                failures++;
+            }
+
+            freight.CompanyFilter = "";
+            bool keptAfterClear = freight.SelectedCargo != null &&
+                                  freight.SelectedCargo.Token == "cargo.gummy_bears";
+            if (!keptAfterClear)
+            {
+                Console.WriteLine("FAIL: the cargo selection was reset when the filter was cleared");
+                failures++;
+            }
+
+            // 4) 货物 token → 下拉框选中项（反向同步）。
+            freight.NewCargo = "cargo.haulie";
+            bool upOk = freight.SelectedCargo != null &&
+                        freight.SelectedCargo.Token == "cargo.haulie";
+            Console.WriteLine($"[cargo] token -> picker ok = {upOk}");
+            if (!upOk)
+            {
+                Console.WriteLine("FAIL: setting the cargo token did not update the picker");
+                failures++;
+            }
+
+            // 5) 不存在的 token：选中项清空，但不能抛异常。
+            freight.NewCargo = "cargo.does_not_exist";
+            bool clearedOk = freight.SelectedCargo == null;
+            Console.WriteLine($"[cargo] unknown token clears the selection = {clearedOk}");
+            if (!clearedOk)
+            {
+                Console.WriteLine("FAIL: an unknown cargo token did not clear the selection");
+                failures++;
+            }
+
+            // 6) 没选货物时创建任务：必须回落到默认货物，不能写出空引用。
+            freight.SelectedCompany = freight.Companies.FirstOrDefault();
+            var company = freight.SelectedCompany;
+            int offersBefore = company?.JobOfferCount ?? 0;
+            int jobsBefore = sf.GetFreightJobs().Count;
+
+            freight.CreateJobCommand.Execute(null);
+
+            var jobs = sf.GetFreightJobs();
+            var created = jobs.Count > jobsBefore ? jobs[jobs.Count - 1] : null;
+            bool createdOk = created != null &&
+                            created.Cargo == "cargo.haulie" &&
+                            company != null &&
+                            company.JobOfferCount == offersBefore + 1;
+            Console.WriteLine($"[cargo] created job cargo = {created?.Cargo ?? "(none)"} " +
+                              $"(company offers {offersBefore} -> {company?.JobOfferCount})");
+            if (!createdOk)
+            {
+                Console.WriteLine("FAIL: creating a job without a cargo selection did not fall back to the default");
+                failures++;
+            }
+
+            return failures;
+        }
+
         /// <summary>
         /// 校验「空引用」的统一处理。
         /// <para>
@@ -2390,5 +2596,25 @@ namespace Ets2SaveEditor.Tests
 
             return failures;
         }
+
+        /// <summary>
+        /// 货运市场测试用的最小存档：两家公司、两条任务。
+        /// </summary>
+        private const string FreightSample =
+            "SiiNunit\n{\n" +
+            "economy : _nameless.0000 {\n experience_points: 1000\n}\n" +
+            "company : company.volatile.nbfc.aberdeen {\n" +
+            " permanent_data: company.permanent.nbfc\n" +
+            " job_offer: 1\n job_offer[0]: _nameless.job1\n discovered: true\n}\n" +
+            "company : company.volatile.stokes.erfurt {\n" +
+            " permanent_data: company.permanent.stokes\n" +
+            " job_offer: 1\n job_offer[0]: _nameless.job2\n discovered: true\n}\n" +
+            "job_offer_data : _nameless.job1 {\n" +
+            " target: \"nbfc.aberdeen\"\n cargo: cargo.haulie\n company_truck: scania_s_2024e\n" +
+            " urgency: 0\n units_count: 1\n fill_ratio: 1\n shortest_distance_km: 100\n}\n" +
+            "job_offer_data : _nameless.job2 {\n" +
+            " target: \"stokes.erfurt\"\n cargo: cargo.gummy_bears\n company_truck: daf_xg\n" +
+            " urgency: 0\n units_count: 1\n fill_ratio: 1\n shortest_distance_km: 200\n}\n" +
+            "}\n";
     }
 }

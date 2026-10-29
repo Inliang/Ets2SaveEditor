@@ -9,8 +9,10 @@
             <MenuItem Header="文件(_F)">
                 <MenuItem x:Name="MiOpenFile" Header="打开文件..." Click="MiOpenFile_Click"/>
                 <MenuItem x:Name="MiOpenFolder" Header="打开存档文件夹并加载..." Click="MiOpenFolder_Click"/>
-                <MenuItem x:Name="MiSave" Header="保存(_S)" Click="MiSave_Click"/>
-                <MenuItem x:Name="MiSaveAs" Header="另存为..." Click="MiSaveAs_Click"/>
+                <MenuItem x:Name="MiSave" Header="保存(_S)" Click="MiSave_Click"
+                          IsEnabled="{Binding HasLoadedSave}"/>
+                <MenuItem x:Name="MiSaveAs" Header="另存为..." Click="MiSaveAs_Click"
+                          IsEnabled="{Binding HasLoadedSave}"/>
                 <Separator/>
                 <MenuItem x:Name="MiExit" Header="退出" Click="MiExit_Click"/>
             </MenuItem>
