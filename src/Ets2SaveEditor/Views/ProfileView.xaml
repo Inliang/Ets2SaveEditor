@@ -28,19 +28,7 @@
                         <TextBlock Grid.Row="2" Grid.Column="0" Text="当前等级" VerticalAlignment="Center" Margin="0,4"/>
                         <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding Level}" VerticalAlignment="Center" FontWeight="Bold" Margin="0,4"/>
                         <TextBlock Grid.Row="3" Grid.Column="0" Text="距离下一级" VerticalAlignment="Center" Margin="0,4"/>
-                        <TextBlock Grid.Row="3" Grid.Column="1" VerticalAlignment="Center" Margin="0,4">
-                            <TextBlock.Style>
-                                <Style TargetType="TextBlock">
-                                    <Setter Property="Text" Value="{Binding XpToNextLevel, StringFormat={}{0:N0} XP}"/>
-                                    <Style.Triggers>
-                                        <DataTrigger Binding="{Binding IsMaxLevel}" Value="True">
-                                            <Setter Property="Text" Value="已满级"/>
-                                            <Setter Property="Foreground" Value="{StaticResource MutedBrush}"/>
-                                        </DataTrigger>
-                                    </Style.Triggers>
-                                </Style>
-                            </TextBlock.Style>
-                        </TextBlock>
+                        <TextBlock Grid.Row="3" Grid.Column="1" Text="{Binding LevelProgress}" VerticalAlignment="Center" Margin="0,4"/>
                     </Grid>
                 </StackPanel>
             </Border>

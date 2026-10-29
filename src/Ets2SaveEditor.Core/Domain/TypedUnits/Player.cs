@@ -68,7 +68,8 @@ namespace Ets2SaveEditor.Core.Domain.TypedUnits
         public static readonly long[] LevelXpIncrements = BuildLevelXpIncrements();
 
         /// <summary>
-        /// 累计经验门槛：<c>LevelXpThresholds[L]</c> = 达到等级 <c>L</c> 所需的累计 XP（L 从 1 到 100）。
+        /// 累计经验门槛：<c>LevelXpThresholds[L]</c> = 达到等级 <c>L</c> 所需的累计 XP
+        /// （L 从 1 到 100 有效，索引 0 仅作占位）。
         /// </summary>
         private static readonly long[] LevelXpThresholds = BuildLevelXpThresholds();
 
@@ -126,7 +127,7 @@ namespace Ets2SaveEditor.Core.Domain.TypedUnits
         /// <summary>
         /// 根据累计经验值推导等级：返回累计经验门槛不超过 <paramref name="xp"/> 的最高等级。
         /// <para>
-        /// 等级 1 的门槛是 200 XP，因此 0 XP 也算 1 级（游戏里新号就是 1 级）。
+        /// 等级 1 的门槛是 200 XP，但 0 XP 也是 1 级（新号即 1 级），因此等级下限为 1。
         /// 超过 <see cref="MaxLevelXp"/>（575700 XP）后封顶为 <see cref="MaxLevel"/> 级。
         /// </para>
         /// </summary>
@@ -163,7 +164,7 @@ namespace Ets2SaveEditor.Core.Domain.TypedUnits
         /// <returns>达到该等级所需的累计经验值。</returns>
         public static long XpForLevel(int level)
         {
-            if (level <= 1) return 0;
+            if (level < 1) return 0;
             if (level > MaxLevel) return MaxLevelXp;
             return LevelXpThresholds[level];
         }

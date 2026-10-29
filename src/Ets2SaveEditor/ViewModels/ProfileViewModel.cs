@@ -9,8 +9,10 @@ namespace Ets2SaveEditor.ViewModels
         [ObservableProperty] private long _money;
         [ObservableProperty] private long _experience;
         [ObservableProperty] private int _level;
-        [ObservableProperty] private long _xpToNextLevel;
-        [ObservableProperty] private bool _isMaxLevel;
+
+        /// <summary>距离下一级的提示文字（未加载存档显示“—”，满级显示“已满级”）。</summary>
+        [ObservableProperty] private string _levelProgress = "—";
+
         [ObservableProperty] private int _longDist;
         [ObservableProperty] private int _heavy;
         [ObservableProperty] private int _fragile;
@@ -62,8 +64,15 @@ namespace Ets2SaveEditor.ViewModels
         private void RefreshLevel(long xp)
         {
             Level = Player.LevelFromXp(xp);
-            IsMaxLevel = Level >= Player.MaxLevel;
-            XpToNextLevel = Player.XpToNextLevel(xp);
+
+            if (Level >= Player.MaxLevel)
+            {
+                LevelProgress = "已满级";
+            }
+            else
+            {
+                LevelProgress = $"还差 {Player.XpToNextLevel(xp):N0} XP";
+            }
         }
 
         private static int Clamp(int v) => v < 0 ? 0 : (v > 6 ? 6 : v);
