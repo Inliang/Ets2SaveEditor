@@ -93,6 +93,7 @@ namespace Ets2SaveEditor.Tests
             failures += TestUiMenuEnable();
             failures += TestNoRealSavePath();
             failures += TestDisplayName();
+            failures += TestSaveFormatMarker();
             failures += TestNullReference();
             failures += TestRealSave();
 
@@ -3069,6 +3070,21 @@ namespace Ets2SaveEditor.Tests
                 failures++;
             }
 
+            // 工具栏上的「存档格式标记」必须真的在界面上（绑到 VM 的 SaveFormatText），
+            // 且对加密档给出「保存将转为明文」的提示 —— 用户点保存之前必须知道。
+            var marker = GetUiElement(window, "TbxSaveFormat");
+            bool markerOk = marker != null &&
+                            !string.IsNullOrEmpty(marker.GetType().GetProperty("Text")?.GetValue(marker) as string) &&
+                            (marker.GetType().GetProperty("Text")?.GetValue(marker) as string) ==
+                            window.VM.SaveFormatText &&
+                            window.VM.SaveFormatText.Contains("明文");
+            Console.WriteLine($"[uimenu] 格式标记在界面上 = {markerOk}  ('{window.VM.SaveFormatText}')");
+            if (!markerOk)
+            {
+                Console.WriteLine("FAIL: 工具栏上没有显示存档格式标记");
+                failures++;
+            }
+
             return failures;
         }
 
@@ -3335,6 +3351,18 @@ namespace Ets2SaveEditor.Tests
                 failures++;
             }
 
+            // ④b 带首尾空格的 token：显示名不能带空格（QA 第 3 轮发现）。
+            string padded = CargoCatalogue.DisplayName("  Qa Probe Neither  ");
+            string paddedCargo = CargoCatalogue.DisplayName("  cargo.gummy_bears  ");
+            bool trimOk = padded.Length > 0 && padded.Trim() == padded &&
+                          paddedCargo.Trim() == paddedCargo && paddedCargo == "Gummy Bears";
+            Console.WriteLine($"[displayname] 首尾空格被裁掉 = {trimOk}  ('{padded}' / '{paddedCargo}')");
+            if (!trimOk)
+            {
+                Console.WriteLine("FAIL: 带首尾空格的 token 产生了带空格的显示名");
+                failures++;
+            }
+
             // ⑤ 可选清单两两不重复。
             var names = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             int dup = 0;
@@ -3376,6 +3404,72 @@ namespace Ets2SaveEditor.Tests
             }
             types.Sort(StringComparer.Ordinal);
             return types;
+        }
+
+        // ------------------------------------------------------------------
+        // 存档格式标记：保存前就要让用户知道「会转为明文 SII」。
+        // ------------------------------------------------------------------
+
+        /// <summary>
+        /// 校验工具栏上的**存档格式标记**在两种状态下都正确。
+        /// <para>
+        /// 本工具保存时统一写明文 SII，而游戏原生的加密容器（ScsC）**无法再变回**
+        /// （HMAC 密钥未公开）。原文件会自动备份，所以是可逆的 —— 但用户在点保存
+        /// 之前必须知道这件事。标记就放在工具栏路径旁（不是模态对话框）。
+        /// </para>
+        /// <para>
+        /// 两种状态：
+        /// ① 加密档 → 「⚠ 加密档（保存将转为明文 SII）」，悬停说明要讲清后果与可逆性；
+        /// ② 明文档 → 「明文 SII」（不带警告号）。
+        /// </para>
+        /// </summary>
+        private static int TestSaveFormatMarker()
+        {
+            int failures = 0;
+
+            if (!File.Exists(RealSavePath))
+            {
+                Console.WriteLine("[saveformat] SKIP: real save not found");
+                return 0;
+            }
+
+            string dir = CreateTempDir("saveformat");
+            string encrypted = Path.Combine(dir, "encrypted_copy.sii");
+            File.Copy(RealSavePath, encrypted, true);   // 只操作副本（真实存档是加密容器）
+
+            string plain = Path.Combine(dir, "plain_copy.sii");
+            File.WriteAllText(plain, FreightSample);
+
+            var vm = new MainViewModel();
+
+            // ① 加密档：标记必须带警告号，并说明「保存将转为明文 SII」。
+            vm.LoadFile(encrypted);
+            string encryptedText = vm.SaveFormatText;
+            string encryptedTip = vm.SaveFormatTip;
+            bool encryptedOk = encryptedText.Contains("加密档") &&
+                               encryptedText.Contains("明文") &&
+                               encryptedText.Contains("⚠") &&
+                               encryptedTip.Contains("无法再变回") &&
+                               encryptedTip.Contains("备份");
+            Console.WriteLine($"[saveformat] 加密档标记 = '{encryptedText}'  ({encryptedOk})");
+            if (!encryptedOk)
+            {
+                Console.WriteLine("FAIL: 加密档的格式标记没有正确提示「保存将转为明文 SII」");
+                failures++;
+            }
+
+            // ② 明文档：显示「明文 SII」，不带警告号。
+            vm.LoadFile(plain);
+            string plainText = vm.SaveFormatText;
+            bool plainOk = plainText.Contains("明文 SII") && !plainText.Contains("⚠");
+            Console.WriteLine($"[saveformat] 明文档标记 = '{plainText}'  ({plainOk})");
+            if (!plainOk)
+            {
+                Console.WriteLine("FAIL: 明文 SII 存档的格式标记不正确");
+                failures++;
+            }
+
+            return failures;
         }
 
         /// <summary>

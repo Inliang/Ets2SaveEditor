@@ -35,6 +35,7 @@
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
                 <StackPanel Grid.Column="0" Orientation="Horizontal">
                     <Button x:Name="BtnSave" Content="保存" Padding="18,7" MinWidth="88"
@@ -52,10 +53,18 @@
                     <Button Content="打开文件夹…" Padding="14,7" MinWidth="100"
                             Click="BtnOpenFolder_Click" ToolTip="打开存档所在文件夹"/>
                 </StackPanel>
-                <TextBlock Grid.Column="1" Text="{Binding LoadedPathText}"
+                <TextBlock x:Name="TbxLoadedPath" Grid.Column="1" Text="{Binding LoadedPathText}"
                            VerticalAlignment="Center" Margin="14,0,0,0"
                            Foreground="{StaticResource MutedBrush}" TextTrimming="CharacterEllipsis"
                            ToolTip="{Binding LoadedPathText}"/>
+
+                <!-- 存档格式标记：保存会把存档统一写成明文 SII，加密容器无法再变回
+                     （HMAC 密钥未公开），所以在用户点保存之前就告知。
+                     用 MutedBrush / AccentBrush，不用刺眼的红色。 -->
+                <TextBlock x:Name="TbxSaveFormat" Grid.Column="2" Text="{Binding SaveFormatText}"
+                           VerticalAlignment="Center" Margin="10,0,0,0"
+                           Foreground="{StaticResource AccentBrush}" FontWeight="SemiBold"
+                           ToolTip="{Binding SaveFormatTip}"/>
             </Grid>
         </Border>
 

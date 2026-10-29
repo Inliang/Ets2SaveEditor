@@ -63,6 +63,50 @@ namespace Ets2SaveEditor.ViewModels
         /// <summary>工具栏上显示的当前存档路径（未加载时为空）。</summary>
         public string LoadedPathText => CurrentSave != null && CurrentSave.IsLoaded ? CurrentSave.Path : string.Empty;
 
+        /// <summary>
+        /// 工具栏上显示的**存档格式标记**，提醒用户这次保存会把存档写成明文 SII。
+        /// <para>
+        /// 本工具保存时统一写明文 SII（游戏能正常读取），而游戏原生的加密容器
+        /// <c>ScsC</c> **无法再变回**（HMAC 密钥未公开）。原文件会自动备份成
+        /// <c>.bak.&lt;时间戳&gt;</c>，所以是可逆的 —— 但**用户在点保存之前必须知道**。
+        /// </para>
+        /// <para>未加载存档时为空串（不显示标记）。</para>
+        /// </summary>
+        public string SaveFormatText
+        {
+            get
+            {
+                if (CurrentSave == null || !CurrentSave.IsLoaded) return string.Empty;
+
+                return CurrentSave.Format switch
+                {
+                    SiiFormat.Plaintext => "明文 SII",
+                    SiiFormat.Encrypted => "⚠ 加密档（保存将转为明文 SII）",
+                    SiiFormat.Zlib => "⚠ 压缩档（保存将转为明文 SII）",
+                    SiiFormat.Binary => "⚠ 二进制档（保存将转为明文 SII）",
+                    _ => string.Empty,
+                };
+            }
+        }
+
+        /// <summary>格式标记的悬停说明：讲清后果与可逆性。</summary>
+        public string SaveFormatTip
+        {
+            get
+            {
+                if (CurrentSave == null || !CurrentSave.IsLoaded) return string.Empty;
+
+                if (CurrentSave.Format == SiiFormat.Plaintext)
+                {
+                    return "此存档当前就是明文 SII 格式，本工具保存后会保持该格式。";
+                }
+
+                return "此存档为游戏原生的" + FormatText(CurrentSave.Format) + "格式。" +
+                       "本工具保存时统一写为明文 SII（游戏可正常读取），但**无法再变回加密格式**" +
+                       "（HMAC 密钥未公开）。原文件会自动备份为 .bak.<时间戳>，可随时还原。";
+            }
+        }
+
         public ProfileViewModel Profile { get; } = new ProfileViewModel();
         public GaragesViewModel Garages { get; } = new GaragesViewModel();
         public TruckViewModel Truck { get; } = new TruckViewModel();
@@ -140,6 +184,8 @@ namespace Ets2SaveEditor.ViewModels
         {
             OnPropertyChanged(nameof(HasLoadedSave));
             OnPropertyChanged(nameof(LoadedPathText));
+            OnPropertyChanged(nameof(SaveFormatText));
+            OnPropertyChanged(nameof(SaveFormatTip));
         }
 
         partial void OnSelectedProfileChanged(SaveProfileItem? value)
@@ -306,6 +352,11 @@ namespace Ets2SaveEditor.ViewModels
                 Freight.ApplyToModel();
                 CurrentSave.Save(CurrentSave.Path, Settings.AutoBackup);
                 StatusText = "已保存（明文 SII）：" + CurrentSave.Path;
+
+                // 保存后目标文件已是明文，格式标记要跟着变（⚠ → 明文 SII）。
+                OnPropertyChanged(nameof(SaveFormatText));
+                OnPropertyChanged(nameof(SaveFormatTip));
+
                 _dialogs.ShowMessage(BuildSaveMessage());
             }
             catch (Exception ex)
@@ -329,6 +380,11 @@ namespace Ets2SaveEditor.ViewModels
                 Freight.ApplyToModel();
                 CurrentSave.Save(path, Settings.AutoBackup);
                 StatusText = "已另存为（明文 SII）：" + path;
+
+                // 另存为后目标文件也是明文，格式标记同步更新。
+                OnPropertyChanged(nameof(SaveFormatText));
+                OnPropertyChanged(nameof(SaveFormatTip));
+
                 _dialogs.ShowMessage("另存为成功。" + Environment.NewLine + BuildSaveMessage());
             }
             catch (Exception ex)

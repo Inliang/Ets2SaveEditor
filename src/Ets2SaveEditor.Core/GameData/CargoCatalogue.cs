@@ -524,14 +524,18 @@ namespace Ets2SaveEditor.Core.GameData
         {
             if (string.IsNullOrEmpty(cargoToken)) return string.Empty;
 
+            // 外部可能传带空格的 token：裁掉后再查表，才能与规范 token 命中同一项
+            // （否则会绕过消歧表，退化成未消歧的名字）。
+            string token = cargoToken.Trim();
+
             var map = DisplayNameMap.Value;
             string name;
-            if (map.TryGetValue(cargoToken, out name)) return name;
+            if (map.TryGetValue(token, out name)) return name;
 
             // 目录里没有的 token（老存档残留）：算一个可读名字；
             // 若与目录里的某个名字撞了，补上 token 以保证两两可区分。
-            string fallback = BaseName(cargoToken);
-            if (TakenNames.Value.Contains(fallback)) return fallback + " (" + cargoToken + ")";
+            string fallback = BaseName(token);
+            if (TakenNames.Value.Contains(fallback)) return fallback + " (" + token + ")";
             return fallback;
         }
 
@@ -621,6 +625,10 @@ namespace Ets2SaveEditor.Core.GameData
         {
             if (string.IsNullOrEmpty(cargoToken)) return string.Empty;
 
+            // 外部传进来的 token 可能带首尾空格（DisplayName 是公开 API）：
+            // 不裁掉的话，前缀识别会失效、回退出来的名字也会带空格。
+            cargoToken = cargoToken.Trim();
+
             string name = GameNames.Lookup(GameNames.Cargo, cargoToken);
             if (!string.IsNullOrEmpty(name)) return name;
 
@@ -653,6 +661,7 @@ namespace Ets2SaveEditor.Core.GameData
             }
             int dot = name.IndexOf('.');
             if (dot >= 0 && dot < name.Length - 1) name = name.Substring(dot + 1);
+            name = name.Trim();     // 回退形式不能带首尾空格（QA 第 3 轮发现）
             name = name.Replace('_', ' ');
 
             // 每个词首字母大写：老 token（cargo.haulie / cargo.tractor_au）虽然
