@@ -533,6 +533,11 @@ namespace Ets2SaveEditor.Core.GameData
         /// 清单」—— 那会把几百个伪 token 塞进下拉框。可选清单见
         /// <see cref="CargoCatalogue.SelectableTokens"/>。
         /// </para>
+        /// <para>
+        /// 另外：当前版本的 <c>cargo_data</c> 已经覆盖了全部货物，这张表实际
+        /// 命中数为 0 —— 它是为**将来游戏版本新增货物**预留的兜底（新增货物
+        /// 进了 def.scs 却没有 cargo_data 定义时，就靠它给出可读名）。
+        /// </para>
         /// </summary>
         public static readonly Dictionary<string, string> LocalizedCargo =
             new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
