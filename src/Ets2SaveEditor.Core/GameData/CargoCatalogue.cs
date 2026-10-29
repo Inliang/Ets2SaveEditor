@@ -534,6 +534,10 @@ namespace Ets2SaveEditor.Core.GameData
         private static readonly Lazy<Dictionary<string, string>> DisplayNameMap =
             new Lazy<Dictionary<string, string>>(BuildDisplayNames);
 
+        /// <summary>token → 基础名（未消歧）。懒加载。</summary>
+        private static readonly Lazy<Dictionary<string, string>> BaseNames =
+            new Lazy<Dictionary<string, string>>(BuildBaseNames);
+
         /// <summary>目录里所有用过的「基础名」（未加后缀），用于查重。</summary>
         private static readonly Lazy<HashSet<string>> TakenNames =
             new Lazy<HashSet<string>>(BuildTakenNames);
@@ -549,21 +553,17 @@ namespace Ets2SaveEditor.Core.GameData
         /// </summary>
         private static Dictionary<string, string> BuildDisplayNames()
         {
-            var baseNames = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            var baseNames = BaseNames.Value;
             var groups = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
-            foreach (string token in GameNames.Cargo.Keys)
+            foreach (var pair in baseNames)
             {
-                string baseName = BaseName(token);
-                if (string.IsNullOrEmpty(baseName)) continue;
-                baseNames[token] = baseName;
-
                 List<string> group;
-                if (!groups.TryGetValue(baseName, out group))
+                if (!groups.TryGetValue(pair.Value, out group))
                 {
                     group = new List<string>();
-                    groups[baseName] = group;
+                    groups[pair.Value] = group;
                 }
-                group.Add(token);
+                group.Add(pair.Key);
             }
 
             var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -577,15 +577,32 @@ namespace Ets2SaveEditor.Core.GameData
             return result;
         }
 
-        /// <summary>所有基础名（未加后缀），用于判断某个名字是否已被占用。</summary>
+        /// <summary>计算每个已知 token 的「基础名」（未消歧）。</summary>
+        private static Dictionary<string, string> BuildBaseNames()
+        {
+            var baseNames = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (string token in GameNames.Cargo.Keys)
+            {
+                string baseName = BaseName(token);
+                if (string.IsNullOrEmpty(baseName)) continue;
+                baseNames[token] = baseName;
+            }
+            return baseNames;
+        }
+
+        /// <summary>
+        /// 所有基础名（未加后缀），用于判断某个名字是否已被占用。
+        /// <para>
+        /// **正向收集**（而不是从最终名里反向剥离 " ("）：万一将来某个官方名本身
+        /// 带括号（例如 "Cargo (Special)"），反向剥离会把它误伤成 "Cargo"。
+        /// </para>
+        /// </summary>
         private static HashSet<string> BuildTakenNames()
         {
             var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            foreach (string name in DisplayNameMap.Value.Values)
+            foreach (var pair in BaseNames.Value)
             {
-                // 去掉可能存在的 " (token)" 后缀，只留基础名。
-                int bracket = name.LastIndexOf(" (", StringComparison.Ordinal);
-                names.Add(bracket > 0 ? name.Substring(0, bracket) : name);
+                names.Add(pair.Value);
             }
             return names;
         }
@@ -605,6 +622,10 @@ namespace Ets2SaveEditor.Core.GameData
             if (!string.IsNullOrEmpty(name)) return name;
 
             // 游戏改名的旧 token：cargo.x_xxx 的过时变体是 cargo_obsole.x_xxx。
+            // （已知例外：存档里的 cargo.x_apaints 对应的旧名是单数的
+            //  cargo_obsole.x_apaint，差一个字母，这条规则匹配不到，会退回
+            //  token 形式 "X Apaints"。它在存档里是历史遗留，游戏任务从不
+            //  引用，可读性也够，不值得为它引入模糊匹配。）
             if (cargoToken.StartsWith("cargo.", StringComparison.OrdinalIgnoreCase))
             {
                 string obsolete = "cargo_obsole." + cargoToken.Substring("cargo.".Length);

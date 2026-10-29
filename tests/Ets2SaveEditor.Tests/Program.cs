@@ -2602,7 +2602,9 @@ namespace Ets2SaveEditor.Tests
             }
 
             // 10) 清单里的显示名必须两两不重复（撞名的会加 token 后缀）。
-            var pickerNames = new Dictionary<string, string>(StringComparer.Ordinal);
+            // 与实现的分组口径保持一致（实现用 OrdinalIgnoreCase）：断言不能比实现宽松，
+            // 否则将来游戏加入「仅大小写不同」的两个货物名时，断言会漏检而实现会消歧。
+            var pickerNames = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             int nameDup = 0;
             foreach (var choice in freight.CargoChoices)
             {
@@ -2720,7 +2722,7 @@ namespace Ets2SaveEditor.Tests
             int withResidue = 0;
             int viaNames = 0;
             int viaLocale = 0;
-            var names = new Dictionary<string, string>(StringComparer.Ordinal);
+            var names = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             foreach (string token in tokens)
             {
                 string name = CargoCatalogue.DisplayName(token);
