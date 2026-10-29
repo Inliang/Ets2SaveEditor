@@ -41,6 +41,7 @@ namespace Ets2SaveEditor.Tests
             failures += TestCityVisiting();
             failures += TestCustomJobOffer();
             failures += TestLevelTable();
+            failures += TestLevelInvariants();
             failures += TestRealSave();
 
             Console.WriteLine(failures == 0 ? "ALL TESTS PASSED" : $"{failures} TEST(S) FAILED");
@@ -1368,6 +1369,172 @@ namespace Ets2SaveEditor.Tests
             {
                 Console.WriteLine("FAIL: XpToNextLevel should be 0 at max level");
                 failures++;
+            }
+
+            return failures;
+        }
+
+        /// <summary>
+        /// 等级换算的边界不变量与「改经验 → 等级同步 → 保存 → 重载」闭环。
+        /// <para>
+        /// 这些断言来自 QA 独立复核（<c>def.scs</c> 权威表逐级比对 + 20 万采样点交叉比对），
+        /// 覆盖 <see cref="TestLevelTable"/> 只做抽样、未覆盖到的边界：
+        /// 每一级的门槛处判定、每一级的「距下一级」正值、极端 XP 不抛异常、
+        /// <see cref="Player.Level"/> setter 往返，以及 ViewModel 的写回闭环。
+        /// </para>
+        /// </summary>
+        private static int TestLevelInvariants()
+        {
+            int failures = 0;
+
+            // 1) 每一级的门槛处判定：门槛本身 → 该级；门槛 - 1 → 低一级。
+            int boundaryBad = 0;
+            for (int lv = 1; lv <= Player.MaxLevel; lv++)
+            {
+                long threshold = Player.XpForLevel(lv);
+                if (Player.LevelFromXp(threshold) != lv) boundaryBad++;
+                if (lv >= 2 && Player.LevelFromXp(threshold - 1) != lv - 1) boundaryBad++;
+            }
+            Console.WriteLine($"[levelinv] threshold boundary mismatches = {boundaryBad} (over 100 levels)");
+            if (boundaryBad != 0)
+            {
+                Console.WriteLine("FAIL: level threshold boundary mismatch count " + boundaryBad);
+                failures++;
+            }
+
+            // 2) 每一级的「距下一级」：恰好在门槛上时必须返回下一级增量（正数）。
+            int nextBad = 0;
+            for (int lv = 1; lv < Player.MaxLevel; lv++)
+            {
+                long threshold = Player.XpForLevel(lv);
+                long expect = Player.XpForLevel(lv + 1) - threshold;
+                long got = Player.XpToNextLevel(threshold);
+                if (got != expect || got <= 0) nextBad++;
+            }
+            Console.WriteLine($"[levelinv] XpToNextLevel mismatches = {nextBad} (over levels 1..99)");
+            if (nextBad != 0)
+            {
+                Console.WriteLine("FAIL: XpToNextLevel mismatch count " + nextBad);
+                failures++;
+            }
+
+            // 3) 极端输入不得抛异常，且等级必须落在 [1, MaxLevel]。
+            long[] edges = { 0, -1, -999999, long.MinValue, long.MaxValue, 575699, 575700, 575701, int.MaxValue };
+            int edgeBad = 0;
+            foreach (long xp in edges)
+            {
+                try
+                {
+                    int lv = Player.LevelFromXp(xp);
+                    long next = Player.XpToNextLevel(xp);
+                    if (lv < 1 || lv > Player.MaxLevel) edgeBad++;
+                    if (next < 0) edgeBad++;
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"FAIL: LevelFromXp({xp}) threw {ex.Message}");
+                    edgeBad++;
+                }
+            }
+            Console.WriteLine($"[levelinv] edge input violations = {edgeBad} (over {edges.Length} values)");
+            if (edgeBad != 0)
+            {
+                Console.WriteLine("FAIL: edge input violation count " + edgeBad);
+                failures++;
+            }
+
+            // 4) XpForLevel 越界：低于 1 级返回 0，高于满级封顶为满级门槛。
+            CheckXp(failures, "XpForLevel(int.MinValue)", Player.XpForLevel(int.MinValue), 0);
+            CheckXp(failures, "XpForLevel(int.MaxValue)", Player.XpForLevel(int.MaxValue), Player.MaxLevelXp);
+            CheckXp(failures, "XpForLevel(MaxLevel+1)", Player.XpForLevel(Player.MaxLevel + 1), Player.MaxLevelXp);
+            CheckXp(failures, "XpForLevel(MaxLevel)", Player.XpForLevel(Player.MaxLevel), Player.MaxLevelXp);
+
+            // 5) Player.Level setter 往返：Level → Experience → Level 必须原样还原。
+            int setterBad = 0;
+            var probe = new SaveFile();
+            string dir = Path.Combine(Path.GetTempPath(), "ets2test_levelinv");
+            Directory.CreateDirectory(dir);
+            string probePath = Path.Combine(dir, "levelinv.sii");
+            File.WriteAllText(probePath,
+                "SiiNunit\n{\n" +
+                "economy : _nameless.0000 {\n experience_points: 0\n}\n" +
+                "}\n");
+            probe.Load(probePath);
+            var probePlayer = probe.GetPlayer();
+            if (probePlayer == null)
+            {
+                Console.WriteLine("FAIL: could not build a Player for the setter round-trip");
+                failures++;
+            }
+            else
+            {
+                for (int lv = 1; lv <= Player.MaxLevel; lv++)
+                {
+                    probePlayer.Level = lv;
+                    long xpAfter = probePlayer.Experience;
+                    int lvBack = probePlayer.Level;
+                    if (lvBack != lv || xpAfter != Player.XpForLevel(lv)) setterBad++;
+                }
+                Console.WriteLine($"[levelinv] Player.Level setter round-trip mismatches = {setterBad} (over 100 levels)");
+                if (setterBad != 0)
+                {
+                    Console.WriteLine("FAIL: Player.Level setter round-trip mismatch count " + setterBad);
+                    failures++;
+                }
+            }
+
+            // 6) 闭环：改经验值 → 等级自动同步 → 写回存档 → 重新加载后等级仍正确。
+            if (File.Exists(RealSavePath))
+            {
+                string vmDir = Path.Combine(Path.GetTempPath(), "ets2test_levelinv");
+                Directory.CreateDirectory(vmDir);
+                string vmCopy = Path.Combine(vmDir, "levelinv_real_copy.sii");
+                File.Copy(RealSavePath, vmCopy, true);   // 只操作副本，绝不碰原存档
+
+                var sf = new SaveFile();
+                sf.Load(vmCopy);
+                var vm = new ProfileViewModel();
+                vm.LoadFrom(sf);
+
+                bool vmOk = vm.Level == 52 && vm.Experience == 252508;
+                Console.WriteLine($"[levelinv] viewmodel load: level={vm.Level} xp={vm.Experience} (expect 52 / 252508)");
+                if (!vmOk)
+                {
+                    Console.WriteLine("FAIL: viewmodel did not derive level 52 from the real save");
+                    failures++;
+                }
+
+                // 改成 60 级对应的 XP，界面应立即同步显示 60 级。
+                vm.Experience = Player.XpForLevel(60);
+                bool liveOk = vm.Level == 60;
+                Console.WriteLine($"[levelinv] viewmodel live sync: xp={vm.Experience} -> level={vm.Level} (expect 60)");
+                if (!liveOk)
+                {
+                    Console.WriteLine("FAIL: viewmodel level did not follow the edited XP");
+                    failures++;
+                }
+
+                // 写回并保存，然后重新加载，等级必须仍是 60。
+                vm.ApplyToModel();
+                string outPath = Path.Combine(vmDir, "levelinv_saved.sii");
+                sf.Save(outPath, false);
+
+                var sf2 = new SaveFile();
+                sf2.Load(outPath);
+                var vm2 = new ProfileViewModel();
+                vm2.LoadFrom(sf2);
+                long savedXp = sf2.GetPlayer()?.Experience ?? -1;
+                bool reloadOk = savedXp == Player.XpForLevel(60) && vm2.Level == 60;
+                Console.WriteLine($"[levelinv] viewmodel reload: savedXp={savedXp} -> level={vm2.Level} (expect 60)");
+                if (!reloadOk)
+                {
+                    Console.WriteLine("FAIL: level did not survive the save/reload round-trip");
+                    failures++;
+                }
+            }
+            else
+            {
+                Console.WriteLine("[levelinv] SKIP: real save not found, viewmodel round-trip not exercised");
             }
 
             return failures;
