@@ -43,7 +43,8 @@ namespace Ets2SaveEditor.Core.Domain.TypedUnits
         public const long MaxLevelXp = 575700;
 
         /// <summary>
-        /// 等级经验增量表：索引 <c>i</c> 表示从等级 <c>i</c> 升到等级 <c>i+1</c> 所需的 XP <b>增量</b>。
+        /// 等级经验增量表：索引 <c>i</c> 表示<b>升到等级 <c>i+1</c></b> 所需的 XP <b>增量</b>
+        /// （即 <c>level_xp[i]</c> 的原始含义：<c>experience points to the next level</c>）。
         /// <para>
         /// 数据来源：游戏安装目录 <c>def.scs</c>（SCS# v2 归档）内的
         /// <c>xp_level_data : economy.data.xp_levels</c> 块，字段 <c>level_xp[]</c>。
@@ -52,7 +53,16 @@ namespace Ets2SaveEditor.Core.Domain.TypedUnits
         /// </para>
         /// <para>
         /// 该块只显式给出了 <c>level_xp[0..29]</c>（30 项）；30 级之后游戏沿用最后一项
-        /// 6800，因此这里把索引 30~99 补齐为 6800。
+        /// 6800，因此这里把索引 30~99 补齐为 6800。表长 <b>100</b> 项（索引 0~99），
+        /// 正好覆盖「升到 1 级」到「升到 100 级」的 100 段增量；
+        /// 累加结果 <c>LevelXpThresholds[100] = 99,700 + 70 × 6,800 = 575,700</c>，
+        /// 与满级门槛 <see cref="MaxLevelXp"/> 分毫不差。
+        /// </para>
+        /// <para>
+        /// 与 <see cref="LevelXpThresholds"/> 的关系：
+        /// <c>LevelXpThresholds[L] = LevelXpIncrements[0] + … + LevelXpIncrements[L-1]</c>，
+        /// 即索引 <c>i</c> 的增量是「升到等级 <c>i+1</c>」所需的 XP，
+        /// 所以 <c>LevelXpIncrements[0] = 200</c> 表示「升到 1 级需要 200 XP」。
         /// </para>
         /// <para>
         /// 可靠性经过三重交叉验证：
@@ -62,14 +72,25 @@ namespace Ets2SaveEditor.Core.Domain.TypedUnits
         /// （旧表给出 21 级，即用户报告的错误）。
         /// </para>
         /// <para>
-        /// 游戏版本升级后需要重新从 <c>def.scs</c> 提取此表。
+        /// 游戏版本升级后需要重新从 <c>def.scs</c> 提取此表
+        /// （可用 <c>tools/extract_level_xp.py</c> 辅助提取与自校验）。
         /// </para>
         /// </summary>
         public static readonly long[] LevelXpIncrements = BuildLevelXpIncrements();
 
         /// <summary>
-        /// 累计经验门槛：<c>LevelXpThresholds[L]</c> = 达到等级 <c>L</c> 所需的累计 XP
-        /// （L 从 1 到 100 有效，索引 0 仅作占位）。
+        /// 累计经验门槛：<c>LevelXpThresholds[L]</c> = 升到等级 <c>L</c> 所需的累计 XP
+        /// （L 从 1 到 <see cref="MaxLevel"/> 有效，索引 0 仅作占位，恒为 0）。
+        /// <para>
+        /// 下标约定：<c>LevelXpThresholds[1] = 200</c>（升到 1 级）、
+        /// <c>LevelXpThresholds[2] = 700</c>（升到 2 级）、
+        /// <c>LevelXpThresholds[3] = 1400</c>（升到 3 级）……，
+        /// <c>LevelXpThresholds[100] = 575700</c>（升到满级）。
+        /// </para>
+        /// <para>
+        /// 索引 0 只是占位，<see cref="LevelFromXp"/> 与 <see cref="XpForLevel"/>
+        /// 两条换算路径都不会读到它。
+        /// </para>
         /// </summary>
         private static readonly long[] LevelXpThresholds = BuildLevelXpThresholds();
 
@@ -147,12 +168,15 @@ namespace Ets2SaveEditor.Core.Domain.TypedUnits
         }
 
         /// <summary>
-        /// 达到指定等级所需的累计经验值。
+        /// 升到指定等级所需的累计经验值（= 该等级的累计门槛）。
         /// <para>
-        /// 1 级是下限（0 XP 的新号即 1 级），因此返回 0；
-        /// 2 级及以上按 <c>def.scs</c> 的累计门槛取值，例如
-        /// <c>XpForLevel(2) = 700</c>、<c>XpForLevel(3) = 1400</c>、<c>XpForLevel(100) = 575700</c>。
-        /// 高于 <see cref="MaxLevel"/> 时封顶为 <see cref="MaxLevelXp"/>。
+        /// 口径与 <see cref="LevelXpThresholds"/> 完全一致：
+        /// <c>XpForLevel(1) = 200</c>、<c>XpForLevel(2) = 700</c>、<c>XpForLevel(3) = 1400</c>、
+        /// <c>XpForLevel(17) = 31100</c>、<c>XpForLevel(100) = 575700</c>。
+        /// </para>
+        /// <para>
+        /// 越界处理：等级小于 1 返回 0（视为新号，等级仍按 1 计）；
+        /// 等级高于 <see cref="MaxLevel"/> 时封顶为 <see cref="MaxLevelXp"/>。
         /// </para>
         /// <para>
         /// 本方法与 <see cref="LevelFromXp"/> 互为逆运算：
@@ -161,7 +185,7 @@ namespace Ets2SaveEditor.Core.Domain.TypedUnits
         /// </para>
         /// </summary>
         /// <param name="level">目标等级。</param>
-        /// <returns>达到该等级所需的累计经验值。</returns>
+        /// <returns>升到该等级所需的累计经验值。</returns>
         public static long XpForLevel(int level)
         {
             if (level < 1) return 0;
