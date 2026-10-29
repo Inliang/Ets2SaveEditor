@@ -1537,6 +1537,33 @@ namespace Ets2SaveEditor.Tests
                 Console.WriteLine("[levelinv] SKIP: real save not found, viewmodel round-trip not exercised");
             }
 
+            // 7) 负数经验值不得写进存档（游戏会拒绝加载负值经验）。
+            {
+                string negDir = Path.Combine(Path.GetTempPath(), "ets2test_levelinv");
+                Directory.CreateDirectory(negDir);
+                string negPath = Path.Combine(negDir, "levelinv_neg.sii");
+                File.WriteAllText(negPath,
+                    "SiiNunit\n{\n" +
+                    "economy : _nameless.0000 {\n experience_points: 1000\n}\n" +
+                    "}\n");
+
+                var negSf = new SaveFile();
+                negSf.Load(negPath);
+                var negVm = new ProfileViewModel();
+                negVm.LoadFrom(negSf);
+                negVm.Experience = -5000;          // 模拟用户填了负数
+                negVm.ApplyToModel();
+
+                long writtenXp = negSf.GetPlayer()?.Experience ?? -1;
+                bool negOk = writtenXp == 0;
+                Console.WriteLine($"[levelinv] negative xp clamped: written={writtenXp} (expect 0)");
+                if (!negOk)
+                {
+                    Console.WriteLine("FAIL: negative experience was written to the save: " + writtenXp);
+                    failures++;
+                }
+            }
+
             return failures;
         }
 
@@ -1585,13 +1612,15 @@ namespace Ets2SaveEditor.Tests
                 return failures + 1;
             }
 
-            bool formatOk = sf.Format == SiiFormat.Encrypted;
+            // 真实存档可能是加密态（ScsC），也可能是本工具保存后的明文态（SiiNunit）——
+            // 两种都必须能被正确识别并解析，因此这里只断言「格式已知且可解析」。
+            bool formatOk = sf.Format == SiiFormat.Encrypted || sf.Format == SiiFormat.Plaintext;
             long money = sf.GetBank()?.Money ?? -1;
             long xp = sf.GetPlayer()?.Experience ?? -1;
             bool moneyOk = money == 54356889;
             bool xpOk = xp == 252508;
 
-            Console.WriteLine($"[realsave] formatOk={formatOk} money={money} xp={xp} units={sf.Document.Units.Count}");
+            Console.WriteLine($"[realsave] format={sf.Format} formatOk={formatOk} money={money} xp={xp} units={sf.Document.Units.Count}");
             if (!formatOk) { Console.WriteLine("FAIL: real save format not detected"); failures++; }
             if (!moneyOk) { Console.WriteLine("FAIL: real money_account wrong: " + money); failures++; }
             if (!xpOk) { Console.WriteLine("FAIL: real experience_points wrong: " + xp); failures++; }
@@ -1688,7 +1717,8 @@ namespace Ets2SaveEditor.Tests
             }
 
             // 往返必须字节级一致：数组头被正确识别后仍要原样写回。
-            string original = SiiFormatDetector.Decode(File.ReadAllBytes(RealSavePath), SiiFormat.Encrypted);
+            // 注意要按存档的实际格式解码——它可能是加密态，也可能是本工具保存后的明文态。
+            string original = SiiFormatDetector.Decode(File.ReadAllBytes(RealSavePath), sf.Format);
             string roundtrip = SiiSerializer.Serialize(doc);
             bool exact = original == roundtrip;
             Console.WriteLine($"[realsave] roundtripExact={exact}");

@@ -1,3 +1,5 @@
+using System;
+using System.Globalization;
 using CommunityToolkit.Mvvm.ComponentModel;
 using Ets2SaveEditor.Core.Domain;
 using Ets2SaveEditor.Core.Domain.TypedUnits;
@@ -8,7 +10,12 @@ namespace Ets2SaveEditor.ViewModels
     {
         [ObservableProperty] private long _money;
         [ObservableProperty] private long _experience;
-        [ObservableProperty] private int _level;
+
+        /// <summary>当前等级（由经验值派生；未加载存档时为 0）。</summary>
+        public int Level { get; private set; }
+
+        /// <summary>当前等级显示文字（未加载存档显示“—”，否则显示等级数字）。</summary>
+        [ObservableProperty] private string _levelText = "—";
 
         /// <summary>距离下一级的提示文字（未加载存档显示“—”，满级显示“已满级”）。</summary>
         [ObservableProperty] private string _levelProgress = "—";
@@ -44,7 +51,8 @@ namespace Ets2SaveEditor.ViewModels
                 // 等级在游戏里是经验值的派生结果，存档里只存经验值。
                 // 因此这里只回写经验值——界面上的等级会随经验值自动同步，
                 // 避免「改等级」与「改经验」两条路径互相覆盖。
-                _player.Experience = Experience;
+                // 经验值下限为 0：游戏里的等级由经验值派生，负值会让游戏拒绝加载存档。
+                _player.Experience = Math.Max(0, Experience);
                 _player.LongDist = Clamp(LongDist);
                 _player.Heavy = Clamp(Heavy);
                 _player.Fragile = Clamp(Fragile);
@@ -63,9 +71,17 @@ namespace Ets2SaveEditor.ViewModels
         /// </summary>
         private void RefreshLevel(long xp)
         {
-            Level = Player.LevelFromXp(xp);
+            int level = Player.LevelFromXp(xp);
+            Level = level;
 
-            if (Level >= Player.MaxLevel)
+            // 游戏里最低是 1 级；未加载存档时不应显示“0 级”这种不存在的状态。
+            LevelText = _player == null ? "—" : level.ToString(CultureInfo.InvariantCulture);
+
+            if (_player == null)
+            {
+                LevelProgress = "—";
+            }
+            else if (level >= Player.MaxLevel)
             {
                 LevelProgress = "已满级";
             }

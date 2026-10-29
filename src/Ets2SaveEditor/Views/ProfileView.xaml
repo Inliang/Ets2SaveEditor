@@ -26,7 +26,7 @@
                         <TextBlock Grid.Row="1" Grid.Column="0" Text="经验值" VerticalAlignment="Center" Margin="0,4"/>
                         <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding Experience}" Margin="0,4"/>
                         <TextBlock Grid.Row="2" Grid.Column="0" Text="当前等级" VerticalAlignment="Center" Margin="0,4"/>
-                        <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding Level}" VerticalAlignment="Center" FontWeight="Bold" Margin="0,4"/>
+                        <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding LevelText}" VerticalAlignment="Center" FontWeight="Bold" Margin="0,4"/>
                         <TextBlock Grid.Row="3" Grid.Column="0" Text="距离下一级" VerticalAlignment="Center" Margin="0,4"/>
                         <TextBlock Grid.Row="3" Grid.Column="1" Text="{Binding LevelProgress}" VerticalAlignment="Center" Margin="0,4"/>
                     </Grid>
