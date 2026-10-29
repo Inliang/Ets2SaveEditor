@@ -11,6 +11,14 @@
 --------
 * ``def.scs``   —— 定义表：``cargo_data``（货物）、``company_permanent``（品牌/公司）、
   以及 ``city`` / ``truck`` / ``trailer`` 等其它类型。
+* ``dlc_*.scs`` —— **各 DLC 归档也各自带一批 ``cargo_data``**（万圣节、农用机械、
+  工程车……合计 92 项）。只扫 ``def.scs`` 会漏掉它们 —— 货物目录因此从 397 项
+  变成 489 项，也才凑齐「游戏实际在用的全部货物」。
+  **请不要把这一步「优化」成只扫 def.scs。**
+  另外 DLC 里的货物名是 ``@@cn_xxx@@`` 占位符，且**键名与 token 尾段并不一致**
+  （``cargo.art_dumper`` → ``@@cn_articulated_hauler@@``、``cargo.tractor`` →
+  ``@@cn_rstractor@@``），所以只能靠占位符本身去查 locale.scs，不能按 token
+  尾段去猜。
 * ``locale.scs`` —— 本地化字符串：``key[]: "cn_acetylene"`` / ``val[]: "Acetylene"``。
   定义表里的 ``name`` 有时是占位符（``@@cn_acetylene@@``），需用这里的 key 换成实际名称。
 
