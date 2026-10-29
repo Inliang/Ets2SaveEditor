@@ -24,8 +24,13 @@ namespace Ets2SaveEditor.ViewModels
     /// </para>
     /// <para>
     /// 「设等级 = 设经验」这一语义与
-    /// <see cref="Ets2SaveEditor.Core.Domain.TypedUnits.Player.Level"/> 的 setter 完全一致，
-    /// 两处都调用 <see cref="Player.XpForLevel"/>，不会产生分歧。
+    /// <see cref="Ets2SaveEditor.Core.Domain.TypedUnits.Player.Level"/> 的 setter 一致
+    /// （等级 ≥ 1 时两者完全等价，都调用 <see cref="Player.XpForLevel"/>）。
+    /// <para>
+    /// <b>唯一差异</b>：等级 &lt; 1 时，<c>Player.Level</c> 会把经验清零
+    /// （<c>Experience = XpForLevel(0) = 0</c>），而本模型<b>忽略该输入并回弹</b>到当前
+    /// 经验值对应的等级——避免用户误输入 0 或负数就把进度清空。
+    /// </para>
     /// </para>
     /// </para>
     /// </summary>
@@ -163,8 +168,10 @@ namespace Ets2SaveEditor.ViewModels
             _syncing = true;
             try
             {
-                // 与 Player.Level 的 setter 保持同一语义：设等级 = 设经验值。
+                // 等级 ≥ 1 时与 Player.Level 的 setter 同语义：设等级 = 设经验值。
                 // XpForLevel 内部负责上界收敛（>MaxLevel → 满级门槛）。
+                // 唯一的差异在等级 < 1：Player.Level 会清零经验值，而这里选择忽略输入，
+                // 理由见上方类注释（防止误输入清空玩家进度）。
                 long xp = Player.XpForLevel(value);
                 if (Experience != xp) Experience = xp;
 
