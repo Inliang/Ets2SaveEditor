@@ -75,8 +75,12 @@ namespace Ets2SaveEditor.ViewModels
 
         /// <summary>
         /// 默认货物：下拉框里没选（或选了个无效的）时用它。
+        /// <para>
+        /// 必须是**当前游戏版本存在**的货物（def.scs 的 cargo_data 里有），
+        /// 否则新建的任务会引用一个游戏不认的 cargo。
+        /// </para>
         /// </summary>
-        private const string DefaultCargo = "cargo.haulie";
+        private const string DefaultCargo = "cargo.milk";
 
         /// <summary>
         /// 正在同步 <see cref="SelectedCargo"/> 与 <see cref="NewCargo"/>，
@@ -287,11 +291,18 @@ namespace Ets2SaveEditor.ViewModels
         /// <summary>
         /// Builds the cargo picker entries (token + readable name), sorted by
         /// the readable name.
+        /// <para>
+        /// 数据源是 <see cref="GameNames.Cargo"/>（def.scs 的 cargo_data，397 项）
+        /// —— 也就是**当前游戏版本真实存在的货物**。不能用费率表
+        /// （<see cref="CargoCatalogue.Tokens"/>）：那张表是按存档实测手工建的，
+        /// 混着当前游戏已经不认的旧 token（cargo.haulie、cargo.cable_reel …），
+        /// 用户选了写进存档，游戏不认。
+        /// </para>
         /// </summary>
         private static List<CargoChoice> BuildCargoChoices()
         {
             var cargoList = new List<CargoChoice>();
-            foreach (var token in CargoCatalogue.Tokens)
+            foreach (var token in GameNames.Cargo.Keys)
             {
                 string name = CargoCatalogue.DisplayName(token);
                 if (string.IsNullOrEmpty(name)) continue;

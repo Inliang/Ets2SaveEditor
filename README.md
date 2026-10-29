@@ -47,7 +47,7 @@ Ets2SaveEditor 会自动识别上述格式：`ScsC` → AES-256-CBC 解密 → z
 | | 从已探索城市抓取货物 | ✅ 已实现 | 解锁城市后，其货运市场即可在游戏内使用；工具内可直接浏览该城市的任务 |
 | **货运市场** | 创建自定义货运任务 | ✅ 已实现 | 「货运市场」页签可新建任务：创建 `job_offer_data` 单元**并注册到公司**的 `job_offer` 数组（缺一不可，游戏才认）；公司与货物均为可读名称下拉；公司筛选支持**显示名 / 品牌 / 公司 id / 城市名**（忽略大小写） |
 | | 任务报酬估算 | ✅ 已实现 | 实时显示「预估报酬」与「每公里报酬」；费率取自真实存档的 `delivery_log_entry` 实测数据 |
-| | 货物市场浏览 / 编辑 | ✅ 已实现 | 浏览**游戏自带**的城市（334 个，中文名）与货物（366 种，真实 token）目录，支持按名称 / token 筛选 |
+| | 货物市场浏览 / 编辑 | ✅ 已实现 | 浏览**游戏自带**的城市（334 个，中文名）与货物（397 种，真实 token）目录，支持按名称 / token 筛选 |
 | **分享 / 协作** | 分享卡车位置 | 🔲 规划中 | 导出 / 导入卡车坐标（P2） |
 | | 分享 GPS 路径 | 🔲 规划中 | 导出 / 导入导航路径（P2） |
 | | 编队控制包 | 🔲 规划中 | 多卡车位置打包为 Convoy Control 包（P2） |
@@ -221,12 +221,7 @@ python tools/extract_level_xp.py "<ETS2 安装目录>/def.scs"
 | 文件 | 内容 | 提取结果 |
 | --- | --- | --- |
 | `def.scs` | 定义表（`cargo_data`、`company_permanent` …） | 货物 397 项、品牌 138 项 |
-
-> **货物目录的合并口径**：下拉框与「货物」页用的是**合并后的清单**（366 项）——
-> `def.scs` 提取的显示名表（397 项，其中 71 个 `cargo_obsole.*` 是游戏标注的旧名，
-> 已排除）加上费率表与实测费率表（游戏在用但显示名表没收录的，如 `cargo.haulie`）。
-> 三者取并集，任何一个来源里的真实 token 都不会丢。
-| `locale.scs` | 本地化字符串（`key[]` / `val[]`） | 英文 5482 条 |
+| `locale.scs` | 本地化字符串（`key[]` / `val[]`） | 英文 5482 条（其中 `cn_*` 425 条） |
 
 两张表在 `tools/extract_names.py` 里关联起来（定义里的 `@@cn_xxx@@` 占位符会被换成
 实际名称），结果内嵌进 `src/Ets2SaveEditor.Core/GameData/GameNames.cs`，
@@ -237,6 +232,18 @@ python tools/extract_level_xp.py "<ETS2 安装目录>/def.scs"
 ```bash
 python tools/extract_names.py "<ETS2 安装目录>" game_names.json
 ```
+
+> **货物显示名是三级查表**：
+> ① `GameNames.Cargo`（权威表，来自 `def.scs` 的 `cargo_data`，397 项）→
+> ② `GameNames.LocalizedCargo`（本地化兜底，来自 `locale.scs` 的 `cn_*` 键，425 项）→
+> ③ token 的可读形式（`cargo.haulie` → "Haulie"）。
+> 存档是**历史累积**的，里面可能有当前游戏版本已经不认的旧 token
+> （`cargo.haulie`、`cargo.cable_reel` …），这三级保证它们也显示得可读，
+> 而不是空白或一串看不懂的下划线。
+
+> **可选货物清单 = `GameNames.Cargo`（397 项）**，也就是当前游戏版本真实存在的货物。
+> 不能拿费率表（`CargoCatalogue.Tokens`）当清单：那张表是按存档实测手工建的，
+> 混着当前游戏已经不认的旧 token，用户选了写进存档，游戏不认。
 
 > **卡车型号无法显示**：游戏存档里根本没有车型字段（`vehicle` 单元只有磨损、油量、车牌等），
 > 卡车的型号名只存在于 3D 模型资源中，因此工具以**车牌 + 所属车库**标识卡车。

@@ -84,6 +84,7 @@ namespace Ets2SaveEditor.Tests
             failures += TestCargoSelection();
             failures += TestTrailerModelName();
             failures += TestBuiltInGameData();
+            failures += TestCargoNames();
             failures += TestNullReference();
             failures += TestRealSave();
 
@@ -2492,9 +2493,9 @@ namespace Ets2SaveEditor.Tests
             }
 
             // 4) 货物 token → 下拉框选中项（反向同步）。
-            freight.NewCargo = "cargo.haulie";
+            freight.NewCargo = "cargo.milk";
             bool upOk = freight.SelectedCargo != null &&
-                        freight.SelectedCargo.Token == "cargo.haulie";
+                        freight.SelectedCargo.Token == "cargo.milk";
             Console.WriteLine($"[cargo] token -> picker ok = {upOk}");
             if (!upOk)
             {
@@ -2524,7 +2525,7 @@ namespace Ets2SaveEditor.Tests
             var jobs = sf.GetFreightJobs();
             var created = jobs.Count > jobsBefore ? jobs[jobs.Count - 1] : null;
             bool createdOk = created != null &&
-                            created.Cargo == "cargo.haulie" &&
+                            created.Cargo == "cargo.milk" &&
                             company != null &&
                             company.JobOfferCount == offersBefore + 1;
             Console.WriteLine($"[cargo] created job cargo = {created?.Cargo ?? "(none)"} " +
@@ -2565,6 +2566,151 @@ namespace Ets2SaveEditor.Tests
             if (!dlcInPicker)
             {
                 Console.WriteLine("FAIL: the cargo picker is missing the DLC cargoes");
+                failures++;
+            }
+
+            // 9) 下拉框的清单必须与 def.scs 的 cargo_data 完全一致：
+            //    - 竞速赛等 DLC 货物（cargo_obsole.*）必须能选到
+            //    - 当前游戏已经不认的旧 token（cargo.haulie 等）不能出现在清单里
+            //      （选它写进存档，游戏不认）
+            var pickerTokens = new HashSet<string>(
+                freight.CargoChoices.Select(c => c.Token), StringComparer.OrdinalIgnoreCase);
+            bool pickerMatchesNamesTable = pickerTokens.Count == GameNames.Cargo.Count &&
+                                           GameNames.Cargo.Keys.All(pickerTokens.Contains);
+            bool noLegacyInPicker = !pickerTokens.Contains("cargo.haulie") &&
+                                    !pickerTokens.Contains("cargo.cable_reel");
+            Console.WriteLine($"[cargo] picker matches cargo_data={pickerMatchesNamesTable} " +
+                              $"no-legacy={noLegacyInPicker} (picker={pickerTokens.Count})");
+            if (!pickerMatchesNamesTable || !noLegacyInPicker)
+            {
+                Console.WriteLine("FAIL: the cargo picker does not match the game's cargo_data");
+                failures++;
+            }
+
+            // 10) 老 token（不在下拉框里，但存档里还在用）也必须原样写进存档。
+            freight.NewCargo = "cargo.haulie";
+            int jobsBeforeLegacy = sf.GetFreightJobs().Count;
+            freight.CreateJobCommand.Execute(null);
+
+            var jobsLegacy = sf.GetFreightJobs();
+            var createdLegacy = jobsLegacy.Count > jobsBeforeLegacy
+                ? jobsLegacy[jobsLegacy.Count - 1]
+                : null;
+            bool legacyKept = createdLegacy != null && createdLegacy.Cargo == "cargo.haulie";
+            Console.WriteLine($"[cargo] legacy cargo token kept = {legacyKept} " +
+                              $"(cargo={createdLegacy?.Cargo ?? "(none)"})");
+            if (!legacyKept)
+            {
+                Console.WriteLine("FAIL: a legacy cargo token was rewritten");
+                failures++;
+            }
+
+            return failures;
+        }
+
+        // ------------------------------------------------------------------
+        // 货物显示名：存档里出现过的每一个货物 token 都必须显示得可读。
+        // ------------------------------------------------------------------
+
+        /// <summary>
+        /// 校验「存档里正在用的所有货物都显示得可读」。
+        /// <para>
+        /// 存档是历史累积的：玩家早期版本接过的任务，<c>cargo</c> 字段仍写着
+        /// 当年的 token（<c>cargo.haulie</c>、<c>cargo.cable_reel</c> …），而这些
+        /// token 在 <c>def.scs</c> 的 <c>cargo_data</c> 里已经没有了。显示名必须
+        /// 有三级兜底：权威表 → 本地化表（locale.scs 的 cn_* 键）→ token 可读形式。
+        /// </para>
+        /// </summary>
+        private static int TestCargoNames()
+        {
+            int failures = 0;
+
+            if (!File.Exists(RealSavePath))
+            {
+                Console.WriteLine("[cargonames] SKIP: real save not found");
+                return 0;
+            }
+
+            string dir = CreateTempDir("cargonames");
+            string copy = Path.Combine(dir, "cargonames_copy.sii");
+            File.Copy(RealSavePath, copy, true);   // 只操作副本
+
+            var sf = new SaveFile();
+            sf.Load(copy);
+
+            // 收集存档里出现过的货物 token。
+            var tokens = new SortedSet<string>(StringComparer.Ordinal);
+            foreach (var unit in sf.Document.GetUnitsByType("job_offer_data"))
+            {
+                string cargo = unit.GetReference("cargo");
+                if (!string.IsNullOrEmpty(cargo) && cargo.StartsWith("cargo.", StringComparison.Ordinal))
+                {
+                    tokens.Add(cargo);
+                }
+            }
+            foreach (var unit in sf.Document.GetUnitsByType("delivery_log_entry"))
+            {
+                var items = unit.GetArrayItems("params");
+                if (items.Count <= 3) continue;
+                string cargo = items[3].AsId();
+                if (!string.IsNullOrEmpty(cargo) && cargo.StartsWith("cargo.", StringComparison.Ordinal))
+                {
+                    tokens.Add(cargo);
+                }
+            }
+
+            int blank = 0;
+            int withResidue = 0;
+            int viaNames = 0;
+            int viaLocale = 0;
+            foreach (string token in tokens)
+            {
+                string name = CargoCatalogue.DisplayName(token);
+                if (string.IsNullOrWhiteSpace(name)) { blank++; continue; }
+                if (name.IndexOf("cargo.", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    name.IndexOf("@@", StringComparison.Ordinal) >= 0)
+                {
+                    withResidue++;
+                    Console.WriteLine($"  FAIL: '{token}' -> '{name}'");
+                }
+
+                if (GameNames.Lookup(GameNames.Cargo, token).Length > 0) viaNames++;
+                else if (GameNames.Lookup(GameNames.LocalizedCargo, token).Length > 0) viaLocale++;
+            }
+
+            Console.WriteLine($"[cargonames] tokens in save={tokens.Count} via-names-table={viaNames} " +
+                              $"via-locale={viaLocale} blank={blank} residue={withResidue}");
+            if (blank != 0)
+            {
+                Console.WriteLine("FAIL: " + blank + " cargo token(s) have no readable name");
+                failures++;
+            }
+            if (withResidue != 0)
+            {
+                Console.WriteLine("FAIL: " + withResidue + " cargo name(s) still contain a raw token or placeholder");
+                failures++;
+            }
+
+            // 本地化兜底表必须真的能兜住一些 cargo_data 没收的 token。
+            bool localeUseful = GameNames.Lookup(GameNames.LocalizedCargo, "cargo.driller") == "Driller D-50" &&
+                                GameNames.Lookup(GameNames.LocalizedCargo, "cargo.cable_reel") == "Industrial Cable Reel" &&
+                                GameNames.Lookup(GameNames.LocalizedCargo, "cargo.planter") == "Planter";
+            Console.WriteLine($"[cargonames] localized fallback usable = {localeUseful} " +
+                              $"(table={GameNames.LocalizedCargo.Count} entries)");
+            if (!localeUseful)
+            {
+                Console.WriteLine("FAIL: the localized cargo fallback table does not cover the known tokens");
+                failures++;
+            }
+
+            // 查不到任何名字的老 token 也要显示成可读形式（首字母大写）。
+            bool legacyOk = CargoCatalogue.DisplayName("cargo.haulie") == "Haulie" &&
+                            CargoCatalogue.DisplayName("cargo.tractor_au") == "Tractor Au";
+            Console.WriteLine($"[cargonames] legacy token fallback = '{CargoCatalogue.DisplayName("cargo.haulie")}' / " +
+                              $"'{CargoCatalogue.DisplayName("cargo.tractor_au")}'");
+            if (!legacyOk)
+            {
+                Console.WriteLine("FAIL: a legacy cargo token is not shown in a readable form");
                 failures++;
             }
 
@@ -2840,20 +2986,21 @@ namespace Ets2SaveEditor.Tests
                 failures++;
             }
 
-            // 3) 货物：必须是真实 token，旧的虚构 token（oil / milk …）必须消失。
+            // 5) 货物目录：必须是真实 token，旧的虚构 token（oil / milk …）必须消失。
             var cargoes = data.Cargoes();
-            var catalogueTokens = CargoCatalogue.Tokens.ToList();
             var gummy = cargoes.FirstOrDefault(c => c.Token == "cargo.gummy_bears");
-            bool cargoCountOk = cargoes.Count == catalogueTokens.Count && cargoes.Count > 300;
+            bool cargoCountOk = cargoes.Count == GameNames.Cargo.Count && cargoes.Count > 300;
             bool cargoTokenOk = gummy != null && gummy.Name == "Gummy Bears";
             bool noFakeOk = !cargoes.Any(c => c.Token == "oil" || c.Token == "milk" ||
                                               c.Token == "furniture" || c.Token == "machinery");
-            bool allRealOk = cargoes.All(c => c.Token.StartsWith("cargo.", StringComparison.Ordinal));
-            Console.WriteLine($"[gamedata] cargoes={cargoes.Count} (catalogue {catalogueTokens.Count}, " +
-                              $"names table {GameNames.Cargo.Count}) gummy='{gummy?.Name ?? "(null)"}'");
+            bool allRealOk = cargoes.All(c =>
+                c.Token.StartsWith("cargo.", StringComparison.Ordinal) ||
+                c.Token.StartsWith("cargo_obsole.", StringComparison.Ordinal));
+            Console.WriteLine($"[gamedata] cargoes={cargoes.Count} (names table {GameNames.Cargo.Count}) " +
+                              $"gummy='{gummy?.Name ?? "(null)"}'");
             if (!cargoCountOk)
             {
-                Console.WriteLine("FAIL: the built-in cargo list does not match the cargo catalogue");
+                Console.WriteLine("FAIL: the built-in cargo list does not match the extracted cargo table");
                 failures++;
             }
             if (!cargoTokenOk)
@@ -2886,30 +3033,10 @@ namespace Ets2SaveEditor.Tests
             // 5) 「货物」页的 ViewModel：数据已装载，筛选可用。
             var vm = new CargoViewModel();
             bool vmOk = vm.Cities.Count == CityCatalogue.Count &&
-                        vm.Cargos.Count == catalogueTokens.Count;
+                        vm.Cargos.Count == GameNames.Cargo.Count;
             if (!vmOk)
             {
                 Console.WriteLine("FAIL: the cargo view model did not load the catalogues");
-                failures++;
-            }
-
-            // 5b) 货物目录必须是「显示名表 + 费率表」的并集：
-            //     - 显示名表里有、费率表里没有的（DLC 货物 cargo.halloween 等）
-            //     - 费率表里有、显示名表里没有的（cargo.haulie 等，存档里确实在用）
-            //     两边都不能丢。
-            var cargoTokenSet = new HashSet<string>(catalogueTokens, StringComparer.OrdinalIgnoreCase);
-            bool coversNamesTable = GameNames.Cargo.Keys
-                .Where(t => !t.StartsWith("cargo_obsole.", StringComparison.OrdinalIgnoreCase))
-                .All(t => cargoTokenSet.Contains(t));
-            bool coversRateTable = CargoCatalogue.RateOf("cargo.haulie") > 0 &&
-                                   cargoTokenSet.Contains("cargo.haulie") &&
-                                   cargoTokenSet.Contains("cargo.halloween");
-            bool noObsolete = !catalogueTokens.Any(t => t.StartsWith("cargo_obsole.", StringComparison.OrdinalIgnoreCase));
-            Console.WriteLine($"[gamedata] cargo catalogue covers names-table={coversNamesTable} " +
-                              $"rate-table={coversRateTable} no-obsolete={noObsolete}");
-            if (!coversNamesTable || !coversRateTable || !noObsolete)
-            {
-                Console.WriteLine("FAIL: the cargo catalogue does not cover every source table");
                 failures++;
             }
 

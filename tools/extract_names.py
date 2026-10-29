@@ -148,6 +148,29 @@ def resolve(name, locale):
     return name
 
 
+def build_localized_cargo(locale):
+    """从本地化条目里提取货物显示名的**兜底表**。
+
+    规则很简单：``cn_<token 尾段>`` → 显示名，例如 ``cn_driller`` → "Driller D-50"。
+
+    为什么需要它：``def.scs`` 的 ``cargo_data`` 只覆盖 397 个货物，而游戏当前
+    使用的、以及老存档里还留着的 token 更多（``cargo.driller``、
+    ``cargo.cable_reel``、``cargo.haulie`` …）。这些 token 在 ``cargo_data``
+    里查不到，但它们的英文名仍在 ``locale.scs`` 的 ``cn_*`` 键里。
+
+    键统一写成 ``cargo.<尾段>``，与 ``cargo_data`` 的 token 形式一致，方便
+    查表时按 token 直接命中。
+    """
+    table = {}
+    for key, value in locale.items():
+        if not key.startswith('cn_'):
+            continue
+        if not value or value.startswith('@@'):
+            continue
+        table['cargo.' + key[3:]] = value
+    return table
+
+
 def main():
     if len(sys.argv) < 2:
         print(__doc__)
@@ -176,10 +199,14 @@ def main():
             out[ident] = resolve(name, locale)
         resolved[kind] = out
 
+    # 货物显示名的本地化兜底表（cn_<尾段> → 英文名）
+    resolved['localized_cargo'] = build_localized_cargo(locale)
+
     with open(out_path, 'w', encoding='utf-8') as handle:
         json.dump(resolved, handle, ensure_ascii=False, indent=1, sort_keys=True)
     print()
     print('已保存 ->', out_path)
+    print('  localized_cargo（本地化兜底）%d' % len(resolved['localized_cargo']))
 
     for kind in ('cargo_data', 'company_permanent'):
         if kind in resolved:

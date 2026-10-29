@@ -412,7 +412,7 @@ namespace Ets2SaveEditor.Core.GameData
         public static int Count => Rates.Count;
 
         /// <summary>
-        /// All cargo tokens the game knows about.
+        /// Cargo tokens that have a rate in the catalogue.
         /// <para>
         /// 三个来源合并：游戏数据文件（def.scs）提取的显示名表
         /// （<see cref="GameNames.Cargo"/>）、费率表，以及从真实存档实测出来的
@@ -420,9 +420,11 @@ namespace Ets2SaveEditor.Core.GameData
         /// （例如 <c>cargo.haulie</c>、<c>cargo.halloween</c>）。
         /// </para>
         /// <para>
-        /// 显示名表里的 <c>cargo_obsole.*</c> 是游戏自己标注的**旧名**（同一个
-        /// 货物的新 token 也在表里，例如 <c>cargo.x_amail</c>），不计入，否则
-        /// 下拉框里会出现两个同名的「Christmas Assorted Mail」。
+        /// ⚠️ 这张表里有**当前游戏版本已不认的旧 token**（如
+        /// <c>cargo.haulie</c>、<c>cargo.cable_reel</c>），所以它只能用来查
+        /// 费率、或者给存档里残留的旧 token 兜一个显示名，**不能**当成
+        /// 「可选货物清单」—— 用户在货运市场里选货物时应当用
+        /// <see cref="GameNames.Cargo"/>。
         /// </para>
         /// </summary>
         public static IEnumerable<string> Tokens => AllTokenList.Value;
@@ -485,10 +487,14 @@ namespace Ets2SaveEditor.Core.GameData
         /// <summary>
         /// Returns a human-readable name for a cargo token.
         /// <para>
-        /// The display names live in the game's own data files, not in the
-        /// save file. They are extracted into <see cref="GameNames.Cargo"/>
-        /// by <c>tools/extract_names.py</c>. When a token is not in that
-        /// table the token itself is shown in a readable form instead.
+        /// 三级查表：
+        /// <list type="number">
+        /// <item><see cref="GameNames.Cargo"/> —— 权威表（def.scs 的 cargo_data，397 项）。</item>
+        /// <item><see cref="GameNames.LocalizedCargo"/> —— 本地化兜底（locale.scs 的
+        /// cn_* 键，425 项），覆盖 cargo_data 没收录、但游戏仍在用或老存档里
+        /// 还留着的 token（如 <c>cargo.driller</c>、<c>cargo.cable_reel</c>）。</item>
+        /// <item>最后回退到 token 本身的可读形式（<c>cargo.haulie</c> → "Haulie"）。</item>
+        /// </list>
         /// </para>
         /// </summary>
         public static string DisplayName(string cargoToken)
@@ -496,6 +502,10 @@ namespace Ets2SaveEditor.Core.GameData
             if (string.IsNullOrEmpty(cargoToken)) return string.Empty;
 
             string name = GameNames.Lookup(GameNames.Cargo, cargoToken);
+            if (!string.IsNullOrEmpty(name)) return name;
+
+            // 本地化兜底：cargo_data 没收录的 token（游戏仍在用 / 老存档残留）。
+            name = GameNames.Lookup(GameNames.LocalizedCargo, cargoToken);
             if (!string.IsNullOrEmpty(name)) return name;
 
             // 回退：把 token 变成可读形式。先去掉命名空间前缀
@@ -511,7 +521,17 @@ namespace Ets2SaveEditor.Core.GameData
             }
             int dot = name.IndexOf('.');
             if (dot >= 0 && dot < name.Length - 1) name = name.Substring(dot + 1);
-            return name.Replace('_', ' ');
+            name = name.Replace('_', ' ');
+
+            // 每个词首字母大写：老 token（cargo.haulie / cargo.tractor_au）虽然
+            // 查不到正式名称，也要显示成 "Haulie" / "Tractor Au"。
+            var words = name.Split(' ');
+            for (int i = 0; i < words.Length; i++)
+            {
+                if (words[i].Length == 0) continue;
+                words[i] = char.ToUpperInvariant(words[i][0]) + words[i].Substring(1);
+            }
+            return string.Join(" ", words);
         }
     }
 }
