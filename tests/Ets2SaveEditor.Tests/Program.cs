@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.IO.Compression;
 using System.Linq;
@@ -24,6 +25,38 @@ namespace Ets2SaveEditor.Tests
         /// </summary>
         private static readonly string RealSavePath =
             @"C:\Users\Administrator\Documents\Euro Truck Simulator 2\profiles\4361726F6C696E65E4B8B6\save\1\game.sii";
+
+        /// <summary>
+        /// Root directory for all temporary test files.
+        /// <para>
+        /// The directory name contains the process id so that several test
+        /// processes can run at the same time (for example a developer running
+        /// the suite while CI or a review agent runs it in parallel) without
+        /// overwriting each other's fixtures. Without this isolation the
+        /// assertions became flaky: one process truncated a file another
+        /// process was reading.
+        /// </para>
+        /// </summary>
+        private static readonly string TempRoot = Path.Combine(
+            Path.GetTempPath(),
+            "ets2test_" + Environment.ProcessId.ToString(CultureInfo.InvariantCulture));
+
+        /// <summary>
+        /// Creates (and returns) a private temporary directory for the current
+        /// test process. The directory is emptied first so each test starts
+        /// from a known state.
+        /// </summary>
+        /// <param name="name">Sub-directory name, unique within the process.</param>
+        /// <returns>The absolute path of the created directory.</returns>
+        private static string CreateTempDir(string name)
+        {
+            string dir = Path.Combine(TempRoot, name);
+            // 先清空再建目录：直接 CreateDirectory 不会清掉上一轮遗留的文件，
+            // 而先删后建必须保证目录最终存在，否则后续写文件会因路径缺失而失败。
+            if (Directory.Exists(dir)) Directory.Delete(dir, true);
+            Directory.CreateDirectory(dir);
+            return dir;
+        }
 
         public static int Main()
         {
@@ -67,8 +100,7 @@ namespace Ets2SaveEditor.Tests
                 "company : company.volatile.sanbuilders.london {\n permanent_data: company.permanent.sanbuilders\n job_offer: 1\n job_offer[0]: _nameless.0004\n cargo_offer_seeds: 1\n cargo_offer_seeds[0]: 1\n discovered: true\n state: 0\n}\n" +
                 "}\n";
 
-            string dir = Path.Combine(Path.GetTempPath(), "ets2test");
-            Directory.CreateDirectory(dir);
+            string dir = CreateTempDir("root");
             string inPath = Path.Combine(dir, "combined.sii");
             File.WriteAllText(inPath, sample);
             string outPath = Path.Combine(dir, "combined.out.sii");
@@ -149,8 +181,7 @@ namespace Ets2SaveEditor.Tests
 
             byte[] container = BuildScsCContainer(plaintext, out _);
 
-            string dir = Path.Combine(Path.GetTempPath(), "ets2test");
-            Directory.CreateDirectory(dir);
+            string dir = CreateTempDir("root");
             string encPath = Path.Combine(dir, "encrypted.sii");
             File.WriteAllBytes(encPath, container);
 
@@ -198,8 +229,7 @@ namespace Ets2SaveEditor.Tests
 
             byte[] container = BuildScsCContainer(plaintext, out int plaintextLength);
 
-            string dir = Path.Combine(Path.GetTempPath(), "ets2test");
-            Directory.CreateDirectory(dir);
+            string dir = CreateTempDir("root");
             string path = Path.Combine(dir, "scsc.sii");
             File.WriteAllBytes(path, container);
 
@@ -356,8 +386,7 @@ namespace Ets2SaveEditor.Tests
             }
 
             // 裸 BSII 文件应被识别为二进制格式并能正常加载。
-            string dir = Path.Combine(Path.GetTempPath(), "ets2test");
-            Directory.CreateDirectory(dir);
+            string dir = CreateTempDir("root");
             string path = Path.Combine(dir, "sample.bsii");
             File.WriteAllBytes(path, binary);
 
@@ -477,9 +506,7 @@ namespace Ets2SaveEditor.Tests
         {
             int failures = 0;
 
-            string dir = Path.Combine(Path.GetTempPath(), "ets2test", "backup_uniqueness");
-            if (Directory.Exists(dir)) Directory.Delete(dir, true);
-            Directory.CreateDirectory(dir);
+            string dir = CreateTempDir("backup_uniqueness");
 
             byte[] container = BuildScsCContainer(
                 "SiiNunit\n{\nbank : _nameless.0001 {\n money_account: 100\n}\n}\n", out _);
@@ -700,9 +727,7 @@ namespace Ets2SaveEditor.Tests
         {
             int failures = 0;
 
-            string dir = Path.Combine(Path.GetTempPath(), "ets2test", "atomic_save");
-            if (Directory.Exists(dir)) Directory.Delete(dir, true);
-            Directory.CreateDirectory(dir);
+            string dir = CreateTempDir("atomic_save");
 
             string source = Path.Combine(dir, "source.sii");
             File.WriteAllText(source,
@@ -750,9 +775,7 @@ namespace Ets2SaveEditor.Tests
         {
             int failures = 0;
 
-            string dir = Path.Combine(Path.GetTempPath(), "ets2test", "style");
-            if (Directory.Exists(dir)) Directory.Delete(dir, true);
-            Directory.CreateDirectory(dir);
+            string dir = CreateTempDir("style");
 
             string path = Path.Combine(dir, "style.sii");
             File.WriteAllText(path,
@@ -929,8 +952,7 @@ namespace Ets2SaveEditor.Tests
         {
             int failures = 0;
 
-            string dir = Path.Combine(Path.GetTempPath(), "ets2test");
-            Directory.CreateDirectory(dir);
+            string dir = CreateTempDir("root");
             string path = Path.Combine(dir, "cities.sii");
 
             File.WriteAllText(path,
@@ -1054,8 +1076,7 @@ namespace Ets2SaveEditor.Tests
         {
             int failures = 0;
 
-            string dir = Path.Combine(Path.GetTempPath(), "ets2test");
-            Directory.CreateDirectory(dir);
+            string dir = CreateTempDir("root");
             string path = Path.Combine(dir, "customjob.sii");
 
             File.WriteAllText(path,
@@ -1452,8 +1473,7 @@ namespace Ets2SaveEditor.Tests
             // 5) Player.Level setter 往返：Level → Experience → Level 必须原样还原。
             int setterBad = 0;
             var probe = new SaveFile();
-            string dir = Path.Combine(Path.GetTempPath(), "ets2test_levelinv");
-            Directory.CreateDirectory(dir);
+            string dir = CreateTempDir("levelinv");
             string probePath = Path.Combine(dir, "levelinv.sii");
             File.WriteAllText(probePath,
                 "SiiNunit\n{\n" +
@@ -1486,8 +1506,7 @@ namespace Ets2SaveEditor.Tests
             // 6) 闭环：改经验值 → 等级自动同步 → 写回存档 → 重新加载后等级仍正确。
             if (File.Exists(RealSavePath))
             {
-                string vmDir = Path.Combine(Path.GetTempPath(), "ets2test_levelinv");
-                Directory.CreateDirectory(vmDir);
+                string vmDir = CreateTempDir("levelinv");
                 string vmCopy = Path.Combine(vmDir, "levelinv_real_copy.sii");
                 File.Copy(RealSavePath, vmCopy, true);   // 只操作副本，绝不碰原存档
 
@@ -1568,8 +1587,7 @@ namespace Ets2SaveEditor.Tests
 
             // 7) 负数经验值不得写进存档（游戏会拒绝加载负值经验）。
             {
-                string negDir = Path.Combine(Path.GetTempPath(), "ets2test_levelinv");
-                Directory.CreateDirectory(negDir);
+                string negDir = CreateTempDir("levelinv");
                 string negPath = Path.Combine(negDir, "levelinv_neg.sii");
                 File.WriteAllText(negPath,
                     "SiiNunit\n{\n" +
@@ -1625,8 +1643,7 @@ namespace Ets2SaveEditor.Tests
             }
 
             int failures = 0;
-            string dir = Path.Combine(Path.GetTempPath(), "ets2test");
-            Directory.CreateDirectory(dir);
+            string dir = CreateTempDir("root");
             string copy = Path.Combine(dir, "real_game_copy.sii");
             File.Copy(RealSavePath, copy, true);
 
