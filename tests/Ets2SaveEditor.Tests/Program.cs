@@ -3071,13 +3071,12 @@ namespace Ets2SaveEditor.Tests
             }
 
             // 工具栏上的「存档格式标记」必须真的在界面上（绑到 VM 的 SaveFormatText），
-            // 且对加密档给出「保存将转为明文」的提示 —— 用户点保存之前必须知道。
+            // 且与 VM 的 SaveFormatText 一致 —— 格式标记必须真的出现在界面上。
             var marker = GetUiElement(window, "TbxSaveFormat");
+            string? markerText = marker?.GetType().GetProperty("Text")?.GetValue(marker) as string;
             bool markerOk = marker != null &&
-                            !string.IsNullOrEmpty(marker.GetType().GetProperty("Text")?.GetValue(marker) as string) &&
-                            (marker.GetType().GetProperty("Text")?.GetValue(marker) as string) ==
-                            window.VM.SaveFormatText &&
-                            window.VM.SaveFormatText.Contains("明文");
+                            !string.IsNullOrEmpty(markerText) &&
+                            markerText == window.VM.SaveFormatText;
             Console.WriteLine($"[uimenu] 格式标记在界面上 = {markerOk}  ('{window.VM.SaveFormatText}')");
             if (!markerOk)
             {
@@ -3419,8 +3418,8 @@ namespace Ets2SaveEditor.Tests
         /// </para>
         /// <para>
         /// 两种状态：
-        /// ① 加密档 → 「⚠ 加密档（保存将转为明文 SII）」，悬停说明要讲清后果与可逆性；
-        /// ② 明文档 → 「明文 SII」（不带警告号）。
+        /// ① 加密档 → 「存档格式：加密 ScsC（原始）」，悬停说明要讲清后果与可逆性；
+        /// ② 明文档 → 「存档格式：明文 SII（保存后）」。
         /// </para>
         /// </summary>
         private static int TestSaveFormatMarker()
@@ -3446,9 +3445,7 @@ namespace Ets2SaveEditor.Tests
             vm.LoadFile(encrypted);
             string encryptedText = vm.SaveFormatText;
             string encryptedTip = vm.SaveFormatTip;
-            bool encryptedOk = encryptedText.Contains("加密档") &&
-                               encryptedText.Contains("明文") &&
-                               encryptedText.Contains("⚠") &&
+            bool encryptedOk = encryptedText == "存档格式：加密 ScsC（原始）" &&
                                encryptedTip.Contains("无法再变回") &&
                                encryptedTip.Contains("备份");
             Console.WriteLine($"[saveformat] 加密档标记 = '{encryptedText}'  ({encryptedOk})");
@@ -3461,7 +3458,7 @@ namespace Ets2SaveEditor.Tests
             // ② 明文档：显示「明文 SII」，不带警告号。
             vm.LoadFile(plain);
             string plainText = vm.SaveFormatText;
-            bool plainOk = plainText.Contains("明文 SII") && !plainText.Contains("⚠");
+            bool plainOk = plainText == "存档格式：明文 SII（保存后）";
             Console.WriteLine($"[saveformat] 明文档标记 = '{plainText}'  ({plainOk})");
             if (!plainOk)
             {

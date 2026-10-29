@@ -64,11 +64,16 @@ namespace Ets2SaveEditor.ViewModels
         public string LoadedPathText => CurrentSave != null && CurrentSave.IsLoaded ? CurrentSave.Path : string.Empty;
 
         /// <summary>
-        /// 工具栏上显示的**存档格式标记**，提醒用户这次保存会把存档写成明文 SII。
+        /// 工具栏上显示的**存档格式标记**，让用户在保存之前就知道存档会被写成什么格式。
         /// <para>
         /// 本工具保存时统一写明文 SII（游戏能正常读取），而游戏原生的加密容器
         /// <c>ScsC</c> **无法再变回**（HMAC 密钥未公开）。原文件会自动备份成
-        /// <c>.bak.&lt;时间戳&gt;</c>，所以是可逆的 —— 但**用户在点保存之前必须知道**。
+        /// <c>.bak.&lt;时间戳&gt;</c>，所以明文化**是可逆的、数据不会丢** ——
+        /// 但**用户在点保存之前仍然必须知道**存档格式会被改写。
+        /// </para>
+        /// <para>
+        /// 措辞上区分两种状态：「加密 ScsC（原始）」= 这还是游戏原始的加密文件；
+        /// 「明文 SII（保存后）」= 这是工具保存过的明文文件。
         /// </para>
         /// <para>未加载存档时为空串（不显示标记）。</para>
         /// </summary>
@@ -80,10 +85,10 @@ namespace Ets2SaveEditor.ViewModels
 
                 return CurrentSave.Format switch
                 {
-                    SiiFormat.Plaintext => "明文 SII",
-                    SiiFormat.Encrypted => "⚠ 加密档（保存将转为明文 SII）",
-                    SiiFormat.Zlib => "⚠ 压缩档（保存将转为明文 SII）",
-                    SiiFormat.Binary => "⚠ 二进制档（保存将转为明文 SII）",
+                    SiiFormat.Plaintext => "存档格式：明文 SII（保存后）",
+                    SiiFormat.Encrypted => "存档格式：加密 ScsC（原始）",
+                    SiiFormat.Zlib => "存档格式：zlib 压缩（原始）",
+                    SiiFormat.Binary => "存档格式：BSII 二进制（原始）",
                     _ => string.Empty,
                 };
             }
@@ -98,12 +103,14 @@ namespace Ets2SaveEditor.ViewModels
 
                 if (CurrentSave.Format == SiiFormat.Plaintext)
                 {
-                    return "此存档当前就是明文 SII 格式，本工具保存后会保持该格式。";
+                    return "此存档当前已是明文 SII 格式（通常是本工具保存的结果），" +
+                           "保存后会保持该格式。";
                 }
 
-                return "此存档为游戏原生的" + FormatText(CurrentSave.Format) + "格式。" +
+                return "此存档为游戏原生的" + FormatText(CurrentSave.Format) + "格式（原始文件）。" +
                        "本工具保存时统一写为明文 SII（游戏可正常读取），但**无法再变回加密格式**" +
-                       "（HMAC 密钥未公开）。原文件会自动备份为 .bak.<时间戳>，可随时还原。";
+                       "（HMAC 密钥未公开）。原文件会自动备份为 .bak.<时间戳>，可随时还原" +
+                       "—— 所以数据不会丢，只是格式变成了明文。";
             }
         }
 
