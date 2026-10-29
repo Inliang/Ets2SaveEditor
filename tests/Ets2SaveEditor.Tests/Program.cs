@@ -75,6 +75,7 @@ namespace Ets2SaveEditor.Tests
             failures += TestCustomJobOffer();
             failures += TestLevelTable();
             failures += TestLevelInvariants();
+            failures += TestSingleVehicleActions();
             failures += TestGameNames();
             failures += TestGarageOwnership();
             failures += TestRealSave();
@@ -1643,6 +1644,103 @@ namespace Ets2SaveEditor.Tests
         /// 数据文件里（由 tools/extract_names.py 提取到 GameNames 表）。
         /// </para>
         /// </summary>
+        /// <summary>
+        /// 校验「只修理/加满某一辆」的单项操作：只影响选中的那一个单元，
+        /// 其它车辆不受影响，且修改能写回存档。
+        /// </summary>
+        private static int TestSingleVehicleActions()
+        {
+            int failures = 0;
+
+            string sample =
+                "SiiNunit\n{\n" +
+                "economy : _nameless.0000 {\n experience_points: 1000\n}\n" +
+                "bank : _nameless.0001 {\n money_account: 100\n}\n" +
+                "vehicle : _nameless.0002 {\n" +
+                " engine_wear: &3f000000\n" +
+                " transmission_wear: &3f000000\n" +
+                " cabin_wear: &3f000000\n" +
+                " chassis_wear: &3f000000\n" +
+                " wheels_wear: 1\n" +
+                " wheels_wear[0]: &3f000000\n" +
+                " fuel_relative: &3ecccccd\n" +
+                " license_plate: \"AA 111AA\"\n" +
+                "}\n" +
+                "vehicle : _nameless.0003 {\n" +
+                " engine_wear: &3f000000\n" +
+                " transmission_wear: &3f000000\n" +
+                " cabin_wear: &3f000000\n" +
+                " chassis_wear: &3f000000\n" +
+                " wheels_wear: 1\n" +
+                " wheels_wear[0]: &3f000000\n" +
+                " fuel_relative: &3ecccccd\n" +
+                " license_plate: \"BB 222BB\"\n" +
+                "}\n" +
+                "}\n";
+
+            string dir = CreateTempDir("single");
+            string inPath = Path.Combine(dir, "single.sii");
+            File.WriteAllText(inPath, sample);
+
+            var sf = new SaveFile();
+            sf.Load(inPath);
+
+            var truck = new TruckViewModel();
+            truck.LoadFrom(sf);
+            if (truck.Items.Count != 2)
+            {
+                Console.WriteLine("FAIL: expected 2 vehicles, got " + truck.Items.Count);
+                return failures + 1;
+            }
+
+            // 只修理第一辆
+            truck.RepairOneCommand.Execute(truck.Items[0]);
+            // 只给第二辆加满油
+            truck.RefuelOneCommand.Execute(truck.Items[1]);
+
+            double firstEngine = truck.Items[0].EngineWear;
+            double secondEngine = truck.Items[1].EngineWear;
+            double firstFuel = truck.Items[0].Fuel;
+            double secondFuel = truck.Items[1].Fuel;
+
+            Console.WriteLine($"[single] after: #0 engine={firstEngine:P0} fuel={firstFuel:P0}  " +
+                            $"#1 engine={secondEngine:P0} fuel={secondFuel:P0}");
+
+            bool repairOk = firstEngine == 0;
+            bool untouchedOk = secondEngine > 0;
+            bool refuelOk = secondFuel == 1.0;
+            bool fuelUntouchedOk = firstFuel < 1.0;
+
+            if (!repairOk) { Console.WriteLine("FAIL: single repair did not clear wear"); failures++; }
+            if (!untouchedOk) { Console.WriteLine("FAIL: single repair touched the other vehicle"); failures++; }
+            if (!refuelOk) { Console.WriteLine("FAIL: single refuel did not fill the tank"); failures++; }
+            if (!fuelUntouchedOk) { Console.WriteLine("FAIL: single refuel refilled the other vehicle"); failures++; }
+
+            // 写回存档后重新加载，修改应已持久化
+            truck.ApplyToModel();
+            string outPath = Path.Combine(dir, "single.out.sii");
+            sf.Save(outPath, false);
+
+            var sf2 = new SaveFile();
+            sf2.Load(outPath);
+            var truck2 = new TruckViewModel();
+            truck2.LoadFrom(sf2);
+
+            bool persisted = truck2.Items.Count == 2 &&
+                             truck2.Items[0].EngineWear == 0 &&
+                             truck2.Items[1].Fuel == 1.0 &&
+                             truck2.Items[1].EngineWear > 0;
+            Console.WriteLine($"[single] persisted: #0 engine={truck2.Items[0].EngineWear:P0} " +
+                              $"#1 fuel={truck2.Items[1].Fuel:P0} #1 engine={truck2.Items[1].EngineWear:P0}");
+            if (!persisted)
+            {
+                Console.WriteLine("FAIL: single vehicle changes not persisted");
+                failures++;
+            }
+
+            return failures;
+        }
+
         private static int TestGameNames()
         {
             int failures = 0;
