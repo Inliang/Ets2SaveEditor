@@ -124,6 +124,10 @@ namespace Ets2SaveEditor.Core.Sii
                 index++;
             }
 
+            // 解析完成后立刻建好查找索引：建索引的开销落在加载阶段，
+            // 而不是第一次渲染表格时。
+            doc.RebuildIndex();
+
             return doc;
         }
 
@@ -141,7 +145,7 @@ namespace Ets2SaveEditor.Core.Sii
             }
 
             var unit = new SiiUnit(type, id);
-            doc.Units.Add(unit);
+            doc.AddUnit(unit);
 
             int index = unitLineIndex + 1;
             int brace = 1; // unit opening brace

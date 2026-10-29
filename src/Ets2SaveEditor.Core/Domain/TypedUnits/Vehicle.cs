@@ -53,18 +53,9 @@ namespace Ets2SaveEditor.Core.Domain.TypedUnits
                 _garageId = string.Empty;
                 if (_document == null || _unit == null) return _garageId;
 
-                string id = _unit.Id;
-                foreach (var garage in _document.GetUnitsByType(Constants.GarageType))
-                {
-                    foreach (var item in garage.GetArrayItems("vehicles"))
-                    {
-                        if (string.Equals(item.AsId(), id, System.StringComparison.Ordinal))
-                        {
-                            _garageId = garage.Id;
-                            return _garageId;
-                        }
-                    }
-                }
+                // 文档按「车辆 id → 车库 id」建了反向索引，查询是 O(1)；
+                // 否则每辆车都要遍历全部车库单元（真实存档有上万个单元）。
+                _garageId = _document.FindGarageOwner(_unit.Id);
                 return _garageId;
             }
         }

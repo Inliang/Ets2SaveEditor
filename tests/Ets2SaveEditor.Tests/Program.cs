@@ -12,6 +12,7 @@ using SaveCompany = Ets2SaveEditor.Core.Domain.TypedUnits.Company;
 using Ets2SaveEditor.Core.GameData;
 using Ets2SaveEditor.Core.Persistence;
 using Ets2SaveEditor.Core.Sii;
+using Ets2SaveEditor.Core.Sii.Model;
 using Ets2SaveEditor.ViewModels;
 
 namespace Ets2SaveEditor.Tests
@@ -78,6 +79,8 @@ namespace Ets2SaveEditor.Tests
             failures += TestSingleVehicleActions();
             failures += TestGameNames();
             failures += TestGarageOwnership();
+            failures += TestDocumentIndex();
+            failures += TestNullReference();
             failures += TestRealSave();
 
             Console.WriteLine(failures == 0 ? "ALL TESTS PASSED" : $"{failures} TEST(S) FAILED");
@@ -2017,6 +2020,371 @@ namespace Ets2SaveEditor.Tests
             if (!exact)
             {
                 Console.WriteLine("FAIL: real save round-trip is not byte identical");
+                failures++;
+            }
+
+            return failures;
+        }
+        // ------------------------------------------------------------------
+        // 文档查找索引测试。
+        //
+        // 存档查找从「每次都线性扫描全部单元」改成了索引，结果必须与线性
+        // 扫描完全一致：同样的 id 命中同样的单元、同样的类型返回同样的单元
+        // 集合（顺序也一致）。增删单元后索引也必须立刻跟上。
+        // ------------------------------------------------------------------
+
+        /// <summary>
+        /// 校验文档查找的索引实现：与大文档的线性扫描逐项比对、增删单元后
+        /// 索引仍然正确，以及车辆/挂车所属车库的反向索引。
+        /// </summary>
+        private static int TestDocumentIndex()
+        {
+            int failures = 0;
+
+            // 造一个大文档：多种类型交替出现，最后还有一个重复 id。
+            var text = new StringBuilder();
+            text.Append("SiiNunit\n{\n");
+            const int unitCount = 2000;
+            for (int i = 0; i < unitCount; i++)
+            {
+                string type = i % 3 == 0 ? "vehicle" : (i % 3 == 1 ? "garage" : "trailer");
+                text.Append(type + " : unit." + i + " {\n some_value: " + i + "\n}\n");
+            }
+            // 重复 id：线性扫描返回先出现的那一个。
+            text.Append("vehicle : unit.0 {\n some_value: 999\n}\n");
+            text.Append("}\n");
+
+            SiiDocument doc = SiiParser.Parse(text.ToString());
+
+            // 1) 按 id 查找：与线性扫描逐个比对。
+            int idMismatch = 0;
+            for (int i = 0; i < unitCount; i++)
+            {
+                string id = "unit." + i;
+                if (!ReferenceEquals(LinearFindById(doc, id), doc.GetUnitById(id))) idMismatch++;
+            }
+            Console.WriteLine($"[index] id lookup mismatches vs linear scan = {idMismatch} (over {unitCount} ids)");
+            if (idMismatch != 0)
+            {
+                Console.WriteLine("FAIL: indexed id lookup differs from the linear scan");
+                failures++;
+            }
+
+            // 2) 按类型查找：集合内容与顺序都要一致。
+            int typeMismatch = 0;
+            foreach (string type in new[] { "vehicle", "garage", "trailer", "economy", "not_a_type" })
+            {
+                List<SiiUnit> expected = LinearByType(doc, type);
+                List<SiiUnit> actual = doc.GetUnitsByType(type);
+                if (expected.Count != actual.Count) { typeMismatch++; continue; }
+                for (int i = 0; i < expected.Count; i++)
+                {
+                    if (!ReferenceEquals(expected[i], actual[i])) { typeMismatch++; break; }
+                }
+            }
+            Console.WriteLine($"[index] type lookup mismatches vs linear scan = {typeMismatch} (over 5 types)");
+            if (typeMismatch != 0)
+            {
+                Console.WriteLine("FAIL: indexed type lookup differs from the linear scan");
+                failures++;
+            }
+
+            // 3) GetFirstByType 必须返回文档里第一个该类型的单元。
+            SiiUnit firstVehicle = doc.GetFirstByType("vehicle");
+            bool firstOk = firstVehicle != null && firstVehicle.Id == "unit.0" &&
+                           doc.GetFirstByType("not_a_type") == null &&
+                           doc.GetFirstByType("") == null;
+            Console.WriteLine($"[index] first-by-type = {firstVehicle?.Id ?? "(null)"}");
+            if (!firstOk)
+            {
+                Console.WriteLine("FAIL: GetFirstByType does not return the first unit of the type");
+                failures++;
+            }
+
+            // 4) 空参数的行为与线性扫描一致：找不到就是 null / 空列表。
+            bool emptyOk = doc.GetUnitById(null) == null && doc.GetUnitById("") == null &&
+                           doc.GetUnitById("no.such.unit") == null &&
+                           doc.GetUnitsByType("").Count == 0 &&
+                           doc.GetUnitsByType(null).Count == 0;
+            if (!emptyOk)
+            {
+                Console.WriteLine("FAIL: empty lookups do not behave like the linear scan");
+                failures++;
+            }
+
+            // 5) 通过 AddUnit / RemoveUnit 增删单元后，索引必须立刻正确。
+            int vehiclesBefore = doc.GetUnitsByType("vehicle").Count;
+            var added = new SiiUnit("vehicle", "unit.added");
+            doc.AddUnit(added);
+            bool addOk = ReferenceEquals(doc.GetUnitById("unit.added"), added) &&
+                         doc.GetUnitsByType("vehicle").Count == vehiclesBefore + 1;
+            doc.RemoveUnit(added);
+            bool removeOk = doc.GetUnitById("unit.added") == null &&
+                            doc.GetUnitsByType("vehicle").Count == vehiclesBefore;
+            Console.WriteLine($"[index] add/remove unit keeps index in sync: add={addOk} remove={removeOk}");
+            if (!addOk || !removeOk)
+            {
+                Console.WriteLine("FAIL: AddUnit / RemoveUnit did not keep the index in sync");
+                failures++;
+            }
+
+            // 6) 外部直接改列表时，数量对不上会自动重建索引。
+            doc.Units.Add(new SiiUnit("vehicle", "unit.direct"));
+            bool directOk = doc.GetUnitById("unit.direct") != null;
+            if (!directOk)
+            {
+                Console.WriteLine("FAIL: a directly added unit was not found");
+                failures++;
+            }
+
+            // 7) 数量没变（删一个加一个）时索引无法自动发现，显式失效后必须正确。
+            int removedIndex = doc.Units.FindIndex(u => u != null && u.Id == "unit." + (unitCount - 1));
+            doc.Units.RemoveAt(removedIndex);
+            doc.Units.Add(new SiiUnit("vehicle", "unit.replaced"));
+            doc.InvalidateIndex();
+            bool replacedOk = doc.GetUnitById("unit.replaced") != null &&
+                              doc.GetUnitById("unit." + (unitCount - 1)) == null;
+            Console.WriteLine($"[index] invalidate after in-place replacement: {replacedOk}");
+            if (!replacedOk)
+            {
+                Console.WriteLine("FAIL: InvalidateIndex did not rebuild the index");
+                failures++;
+            }
+
+            // 8) 车库归属的反向索引。
+            failures += TestGarageOwnerIndex();
+
+            // 9) 真实存档（16000+ 单元）上再比一次，确保规模没问题。
+            failures += TestRealSaveIndex();
+
+            return failures;
+        }
+
+        /// <summary>
+        /// 线性扫描的参考实现：索引改造前的行为就是这样的，测试用它逐项比对。
+        /// </summary>
+        private static SiiUnit? LinearFindById(SiiDocument doc, string id)
+        {
+            if (string.IsNullOrEmpty(id)) return null;
+            foreach (var u in doc.Units)
+            {
+                if (u != null && u.Id == id) return u;
+            }
+            return null;
+        }
+
+        /// <summary>线性扫描的参考实现：按类型收集单元（保持文档顺序）。</summary>
+        private static List<SiiUnit> LinearByType(SiiDocument doc, string type)
+        {
+            var result = new List<SiiUnit>();
+            if (string.IsNullOrEmpty(type)) return result;
+            foreach (var u in doc.Units)
+            {
+                if (u != null && u.Type == type) result.Add(u);
+            }
+            return result;
+        }
+
+        /// <summary>
+        /// 校验「车辆/挂车 → 所属车库」的反向索引：还在车库车位上的才算拥有，
+        /// 卖掉的那些单元必须返回空串。
+        /// </summary>
+        private static int TestGarageOwnerIndex()
+        {
+            int failures = 0;
+
+            string sample =
+                "SiiNunit\n{\n" +
+                "garage : garage.calais {\n vehicles: 2\n vehicles[0]: unit.0\n vehicles[1]: null\n" +
+                " trailers: 1\n trailers[0]: unit.2\n}\n" +
+                "garage : garage.truckersmp {\n vehicles: 1\n vehicles[0]: unit.3\n trailers: 0\n}\n" +
+                "vehicle : unit.0 {\n}\n" +
+                "vehicle : unit.1 {\n}\n" +
+                "trailer : unit.2 {\n}\n" +
+                "}\n";
+
+            SiiDocument doc = SiiParser.Parse(sample);
+
+            bool indexOk = doc.FindGarageOwner("unit.0") == "garage.calais" &&
+                           doc.FindGarageOwner("unit.2") == "garage.calais" &&
+                           doc.FindGarageOwner("unit.3") == "garage.truckersmp" &&
+                           doc.FindGarageOwner("unit.1") == "" &&
+                           doc.FindGarageOwner("") == "" &&
+                           doc.FindGarageOwner(null) == "" &&
+                           doc.FindGarageOwner("null") == "";
+            Console.WriteLine($"[index] garage owner index ok = {indexOk}");
+            if (!indexOk)
+            {
+                Console.WriteLine("FAIL: garage owner index returned the wrong garage");
+                failures++;
+            }
+
+            // 与车辆/挂车包装类的判定必须一致。
+            var parked = new Vehicle(doc.GetUnitById("unit.0"), doc);
+            var sold = new Vehicle(doc.GetUnitById("unit.1"), doc);
+            var trailer = new Trailer(doc.GetUnitById("unit.2"), doc);
+            bool wrapperOk = parked.GarageId == "garage.calais" && parked.IsInGarage &&
+                             sold.GarageId == "" && !sold.IsInGarage &&
+                             trailer.GarageId == "garage.calais" && trailer.IsInGarage;
+            Console.WriteLine($"[index] vehicle/trailer garage id ok = {wrapperOk}");
+            if (!wrapperOk)
+            {
+                Console.WriteLine("FAIL: Vehicle/Trailer garage id disagrees with the index");
+                failures++;
+            }
+
+            return failures;
+        }
+
+        /// <summary>
+        /// 在真实存档上比对索引与线性扫描的结果（真实存档有一万多个单元）。
+        /// </summary>
+        private static int TestRealSaveIndex()
+        {
+            if (!File.Exists(RealSavePath))
+            {
+                Console.WriteLine("[index] SKIP: real save not found");
+                return 0;
+            }
+
+            int failures = 0;
+            string dir = CreateTempDir("index");
+            string copy = Path.Combine(dir, "index_copy.sii");
+            File.Copy(RealSavePath, copy, true);   // 只操作副本
+
+            var sf = new SaveFile();
+            sf.Load(copy);
+            SiiDocument doc = sf.Document;
+
+            // 1) 全部单元的 id 都要能按 id 找回来。
+            int mismatch = 0;
+            int checkedIds = 0;
+            foreach (var unit in doc.Units)
+            {
+                if (unit == null) continue;
+                checkedIds++;
+                if (!ReferenceEquals(unit, doc.GetUnitById(unit.Id))) mismatch++;
+            }
+            Console.WriteLine($"[index] real save: id mismatches = {mismatch} (over {checkedIds} units)");
+            if (mismatch != 0)
+            {
+                Console.WriteLine("FAIL: real save id lookup mismatch count " + mismatch);
+                failures++;
+            }
+
+            // 2) 常见类型的结果要与线性扫描一致。
+            int typeMismatch = 0;
+            foreach (string type in new[] { "garage", "vehicle", "trailer", "company", "job_offer_data", "economy" })
+            {
+                List<SiiUnit> expected = LinearByType(doc, type);
+                List<SiiUnit> actual = doc.GetUnitsByType(type);
+                if (expected.Count != actual.Count) { typeMismatch++; continue; }
+                for (int i = 0; i < expected.Count; i++)
+                {
+                    if (!ReferenceEquals(expected[i], actual[i])) { typeMismatch++; break; }
+                }
+            }
+            Console.WriteLine($"[index] real save: type mismatches = {typeMismatch}");
+            if (typeMismatch != 0)
+            {
+                Console.WriteLine("FAIL: real save type lookup mismatch count " + typeMismatch);
+                failures++;
+            }
+
+            // 3) 车辆所属车库：索引与逐个车库扫描的结果必须一致。
+            int garageMismatch = 0;
+            foreach (var vehicle in sf.GetVehicles())
+            {
+                string expected = LinearGarageOf(doc, vehicle.Unit.Id, "vehicles");
+                if (!string.Equals(expected, vehicle.GarageId, StringComparison.Ordinal)) garageMismatch++;
+            }
+            foreach (var trailer in sf.GetTrailers())
+            {
+                string expected = LinearGarageOf(doc, trailer.Unit.Id, "trailers");
+                if (!string.Equals(expected, trailer.GarageId, StringComparison.Ordinal)) garageMismatch++;
+            }
+            Console.WriteLine($"[index] real save: garage owner mismatches = {garageMismatch}");
+            if (garageMismatch != 0)
+            {
+                Console.WriteLine("FAIL: real save garage owner mismatch count " + garageMismatch);
+                failures++;
+            }
+
+            return failures;
+        }
+
+        /// <summary>
+        /// 线性扫描车库归属的参考实现（索引改造前的行为）。
+        /// </summary>
+        private static string LinearGarageOf(SiiDocument doc, string unitId, string arrayName)
+        {
+            foreach (var garage in doc.GetUnitsByType("garage"))
+            {
+                foreach (var item in garage.GetArrayItems(arrayName))
+                {
+                    if (string.Equals(item.AsId(), unitId, StringComparison.Ordinal)) return garage.Id;
+                }
+            }
+            return string.Empty;
+        }
+
+        /// <summary>
+        /// 校验「空引用」的统一处理。
+        /// <para>
+        /// 存档里的空引用存的是**字面量 <c>null</c>**（不是空串），数组头
+        /// 又是整数。两者都必须当成「没有引用」，否则会把 351 个待聘司机
+        /// 模板之类的占位符当成真实数据。
+        /// </para>
+        /// </summary>
+        private static int TestNullReference()
+        {
+            int failures = 0;
+
+            // 1) 扩展方法本身。
+            bool helperOk =
+                SiiValueExtensions.AsReferenceId(null).Length == 0 &&
+                SiiValueExtensions.AsReferenceId(new ReferenceValue("null")).Length == 0 &&
+                SiiValueExtensions.AsReferenceId(new IntValue(3)).Length == 0 &&
+                SiiValueExtensions.AsReferenceId(new ReferenceValue("unit.1")) == "unit.1" &&
+                SiiValueExtensions.NormalizeReferenceId(null).Length == 0 &&
+                SiiValueExtensions.NormalizeReferenceId("null").Length == 0 &&
+                SiiValueExtensions.NormalizeReferenceId("garage.calais") == "garage.calais";
+            Console.WriteLine($"[nullref] helper behaviour ok = {helperOk}");
+            if (!helperOk)
+            {
+                Console.WriteLine("FAIL: the reference-id helper does not filter empty references");
+                failures++;
+            }
+
+            // 2) 带空位占位符的文档：占位符不得进入任何列表。
+            string sample =
+                "SiiNunit\n{\n" +
+                "economy : _nameless.0000 {\n experience_points: 1000\n}\n" +
+                "player : _nameless.0001 {\n" +
+                " trucks: 2\n trucks[0]: unit.0\n trucks[1]: null\n" +
+                " drivers: 2\n drivers[0]: null\n drivers[1]: null\n}\n" +
+                "garage : garage.calais {\n" +
+                " vehicles: 2\n vehicles[0]: unit.0\n vehicles[1]: null\n" +
+                " drivers: 1\n drivers[0]: null\n}\n" +
+                "vehicle : unit.0 {\n}\n" +
+                "}\n";
+
+            SiiDocument doc = SiiParser.Parse(sample);
+
+            var garage = new Garage(doc.GetUnitById("garage.calais"));
+            var player = Player.FromDocument(doc);
+
+            bool garageOk = garage.Vehicles.Count == 1 && garage.Vehicles[0] == "unit.0" &&
+                            garage.Drivers.Count == 0 && garage.TrailerCount == 0;
+            bool playerOk = player != null &&
+                            player.OwnedTrucks.Count == 1 && player.OwnedTrucks[0] == "unit.0" &&
+                            player.Drivers.Count == 0;
+            bool indexOk = doc.FindGarageOwner("null").Length == 0 &&
+                           doc.FindGarageOwner("unit.0") == "garage.calais";
+            Console.WriteLine($"[nullref] garage={garageOk} player={playerOk} index={indexOk}");
+            if (!garageOk || !playerOk || !indexOk)
+            {
+                Console.WriteLine("FAIL: the 'null' placeholder leaked into a list");
                 failures++;
             }
 

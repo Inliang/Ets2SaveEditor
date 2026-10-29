@@ -295,7 +295,7 @@ namespace Ets2SaveEditor.Core.Domain.TypedUnits
             unit.SetFloat("fill_ratio", 0.0);
             unit.SetArrayItems("trailer_place", new List<SiiValue>());
 
-            doc.Units.Add(unit);
+            doc.AddUnit(unit);
             return new JobOffer(unit, doc);
         }
 
@@ -362,7 +362,7 @@ namespace Ets2SaveEditor.Core.Domain.TypedUnits
                 company.RemoveJobOffer(_unit.Id);
             }
 
-            _doc.Units.Remove(_unit);
+            _doc.RemoveUnit(_unit);
             return true;
         }
 
