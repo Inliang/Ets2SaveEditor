@@ -32,16 +32,82 @@ namespace Ets2SaveEditor.Core.Domain.TypedUnits
         }
 
         /// <summary>
-        /// XP thresholds per level (index = level). Index 0 has no XP requirement.
-        /// Values increase monotonically; extends to roughly level 40.
+        /// 最高等级（Divine Champion）。再往上游戏仍会计数，但等级名不再变化，
+        /// 因此本工具只保留 1~100 级。
         /// </summary>
-        public static readonly long[] XpTable = new long[]
+        public const int MaxLevel = 100;
+
+        /// <summary>
+        /// 达到 <see cref="MaxLevel"/> 级所需的累计经验值（Divine Champion 门槛）。
+        /// </summary>
+        public const long MaxLevelXp = 575700;
+
+        /// <summary>
+        /// 等级经验增量表：索引 <c>i</c> 表示从等级 <c>i</c> 升到等级 <c>i+1</c> 所需的 XP <b>增量</b>。
+        /// <para>
+        /// 数据来源：游戏安装目录 <c>def.scs</c>（SCS# v2 归档）内的
+        /// <c>xp_level_data : economy.data.xp_levels</c> 块，字段 <c>level_xp[]</c>。
+        /// 归档里的注释是 <c>experience points to the next level</c>，即<b>增量</b>语义，
+        /// 不是累计值——这是本表最容易搞错的地方。
+        /// </para>
+        /// <para>
+        /// 该块只显式给出了 <c>level_xp[0..29]</c>（30 项）；30 级之后游戏沿用最后一项
+        /// 6800，因此这里把索引 30~99 补齐为 6800。
+        /// </para>
+        /// <para>
+        /// 可靠性经过三重交叉验证：
+        /// 增量累加后与公开等级表逐级比对，L1..L17 共 17/17 项精确匹配；
+        /// 累加到 L100 得 575700，与公开资料「Divine Champion 575,700 XP」门槛精确相等；
+        /// 真实存档 <c>experience_points = 252508</c> 推导为 52 级，与游戏内显示的 52 级一致
+        /// （旧表给出 21 级，即用户报告的错误）。
+        /// </para>
+        /// <para>
+        /// 游戏版本升级后需要重新从 <c>def.scs</c> 提取此表。
+        /// </para>
+        /// </summary>
+        public static readonly long[] LevelXpIncrements = BuildLevelXpIncrements();
+
+        /// <summary>
+        /// 累计经验门槛：<c>LevelXpThresholds[L]</c> = 达到等级 <c>L</c> 所需的累计 XP（L 从 1 到 100）。
+        /// </summary>
+        private static readonly long[] LevelXpThresholds = BuildLevelXpThresholds();
+
+        /// <summary>
+        /// 构造等级经验增量表：前 30 项取自 <c>def.scs</c>，其余按游戏的规则补齐为 6800。
+        /// </summary>
+        private static long[] BuildLevelXpIncrements()
         {
-            0, 2000, 5000, 9000, 14000, 20000, 27000, 35000, 44000, 54000,
-            65000, 77000, 90000, 104000, 119000, 135000, 152000, 170000, 189000, 209000,
-            230000, 252000, 275000, 299000, 324000, 350000, 377000, 405000, 434000, 464000,
-            495000, 527000, 560000, 594000, 629000, 665000, 702000, 740000, 779000, 819000
-        };
+            // def.scs → xp_level_data : economy.data.xp_levels → level_xp[0..29]
+            long[] defined =
+            {
+                200, 500, 700, 900, 1000, 1100, 1300, 1600, 1700, 2100,
+                2300, 2600, 2700, 2900, 3000, 3100, 3400, 3700, 4000, 4300,
+                4600, 4700, 4900, 5200, 5700, 5900, 6000, 6200, 6600, 6800
+            };
+
+            var all = new long[MaxLevel];
+            for (int i = 0; i < all.Length; i++)
+            {
+                // 30 级之后游戏沿用最后一项（6800）。
+                all[i] = i < defined.Length ? defined[i] : defined[defined.Length - 1];
+            }
+            return all;
+        }
+
+        /// <summary>
+        /// 由增量表累加出各等级的累计经验门槛。
+        /// </summary>
+        private static long[] BuildLevelXpThresholds()
+        {
+            var thresholds = new long[MaxLevel + 1];
+            long total = 0;
+            for (int i = 0; i < MaxLevel; i++)
+            {
+                total += LevelXpIncrements[i];
+                thresholds[i + 1] = total;
+            }
+            return thresholds;
+        }
 
         /// <summary>Accumulated experience points (<c>economy.experience_points</c>).</summary>
         public long Experience
@@ -57,23 +123,66 @@ namespace Ets2SaveEditor.Core.Domain.TypedUnits
             set { Experience = XpForLevel(value); }
         }
 
-        /// <summary>Returns the highest level whose threshold is &lt;= xp.</summary>
+        /// <summary>
+        /// 根据累计经验值推导等级：返回累计经验门槛不超过 <paramref name="xp"/> 的最高等级。
+        /// <para>
+        /// 等级 1 的门槛是 200 XP，因此 0 XP 也算 1 级（游戏里新号就是 1 级）。
+        /// 超过 <see cref="MaxLevelXp"/>（575700 XP）后封顶为 <see cref="MaxLevel"/> 级。
+        /// </para>
+        /// </summary>
+        /// <param name="xp">累计经验值。</param>
+        /// <returns>1 到 <see cref="MaxLevel"/> 之间的等级。</returns>
         public static int LevelFromXp(long xp)
         {
-            int level = 0;
-            for (int i = 0; i < XpTable.Length; i++)
+            if (xp < 0) xp = 0;
+
+            int level = 1;
+            for (int i = 1; i <= MaxLevel; i++)
             {
-                if (xp >= XpTable[i]) level = i;
-                else break;
+                if (LevelXpThresholds[i] > xp) break;
+                level = i;
             }
             return level;
         }
 
-        /// <summary>Returns the XP required for the given level (clamped to table bounds).</summary>
+        /// <summary>
+        /// 达到指定等级所需的累计经验值。
+        /// <para>
+        /// 1 级是下限（0 XP 的新号即 1 级），因此返回 0；
+        /// 2 级及以上按 <c>def.scs</c> 的累计门槛取值，例如
+        /// <c>XpForLevel(2) = 700</c>、<c>XpForLevel(3) = 1400</c>、<c>XpForLevel(100) = 575700</c>。
+        /// 高于 <see cref="MaxLevel"/> 时封顶为 <see cref="MaxLevelXp"/>。
+        /// </para>
+        /// <para>
+        /// 本方法与 <see cref="LevelFromXp"/> 互为逆运算：
+        /// <c>LevelFromXp(XpForLevel(L)) == L</c>（1 ≤ L ≤ 100），
+        /// 因此把等级写回存档时不会产生等级偏差。
+        /// </para>
+        /// </summary>
+        /// <param name="level">目标等级。</param>
+        /// <returns>达到该等级所需的累计经验值。</returns>
         public static long XpForLevel(int level)
         {
-            int idx = level < 0 ? 0 : (level >= XpTable.Length ? XpTable.Length - 1 : level);
-            return XpTable[idx];
+            if (level <= 1) return 0;
+            if (level > MaxLevel) return MaxLevelXp;
+            return LevelXpThresholds[level];
+        }
+
+        /// <summary>
+        /// 距离下一级还差多少经验；已满级时返回 0。
+        /// <para>
+        /// 用于在界面上显示升级进度，例如 252508 XP 时距离 53 级还差 3592 XP。
+        /// </para>
+        /// </summary>
+        /// <param name="xp">当前累计经验值。</param>
+        /// <returns>升到下一级所需的剩余经验值，满级时为 0。</returns>
+        public static long XpToNextLevel(long xp)
+        {
+            if (xp < 0) xp = 0;
+
+            int level = LevelFromXp(xp);
+            if (level >= MaxLevel) return 0;
+            return LevelXpThresholds[level + 1] - xp;
         }
 
         private int GetSkill(string name)

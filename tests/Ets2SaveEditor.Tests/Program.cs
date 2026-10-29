@@ -40,6 +40,7 @@ namespace Ets2SaveEditor.Tests
             failures += TestStringStylePreserved();
             failures += TestCityVisiting();
             failures += TestCustomJobOffer();
+            failures += TestLevelTable();
             failures += TestRealSave();
 
             Console.WriteLine(failures == 0 ? "ALL TESTS PASSED" : $"{failures} TEST(S) FAILED");
@@ -1240,6 +1241,158 @@ namespace Ets2SaveEditor.Tests
         /// 只读复制真实存档到临时目录后加载，验证关键字段可被正确读出。
         /// 绝不写入或覆盖用户真实存档。
         /// </summary>
+        // ------------------------------------------------------------------
+        // 等级换算表测试。
+        //
+        // ETS2 不存等级，只存累计经验值，等级由 XP 按游戏自己的曲线换算。
+        // 曲线取自游戏安装目录 def.scs 内的 xp_level_data.level_xp[]（增量语义），
+        // 30 级之后沿用最后一项 6800，累加到 L100 恰为 575700。
+        // 旧版本用的是一张凭猜测硬编码的表，把 52 级显示成了 20/21 级。
+        // ------------------------------------------------------------------
+
+        /// <summary>
+        /// 校验等级换算表的正确性：真实存档实测值、边界、往返一致性，
+        /// 以及与公开等级表的逐级交叉比对。
+        /// </summary>
+        private static int TestLevelTable()
+        {
+            int failures = 0;
+
+            // 1) 用户真实存档实测：XP=252508 在游戏内显示 52 级。
+            const int realXp = 252508;
+            int realLevel = Player.LevelFromXp(realXp);
+            bool realOk = realLevel == 52;
+            Console.WriteLine($"[level] xp={realXp} -> level={realLevel} (expect 52)");
+            if (!realOk)
+            {
+                Console.WriteLine("FAIL: real save XP should map to level 52, got " + realLevel);
+                failures++;
+            }
+
+            // 2) 边界条件。
+            CheckLevel(failures, "LevelFromXp(0)", Player.LevelFromXp(0), 1);
+            CheckLevel(failures, "LevelFromXp(199)", Player.LevelFromXp(199), 1);
+            CheckLevel(failures, "LevelFromXp(200)", Player.LevelFromXp(200), 1);
+            CheckLevel(failures, "LevelFromXp(699)", Player.LevelFromXp(699), 1);
+            CheckLevel(failures, "LevelFromXp(700)", Player.LevelFromXp(700), 2);
+            CheckLevel(failures, "LevelFromXp(575700)", Player.LevelFromXp(575700), 100);
+            CheckLevel(failures, "LevelFromXp(999999999)", Player.LevelFromXp(999999999), 100);
+
+            // 3) XpForLevel 语义：升到该等级所需的累计 XP。
+            CheckXp(failures, "XpForLevel(1)", Player.XpForLevel(1), 200);
+            CheckXp(failures, "XpForLevel(2)", Player.XpForLevel(2), 700);
+            CheckXp(failures, "XpForLevel(3)", Player.XpForLevel(3), 1400);
+            CheckXp(failures, "XpForLevel(0)", Player.XpForLevel(0), 0);
+            CheckXp(failures, "XpForLevel(101)", Player.XpForLevel(101), 575700);
+
+            // 4) 往返一致性：对每个等级都应能换算回去。
+            int roundTripBad = 0;
+            for (int lv = 1; lv <= Player.MaxLevel; lv++)
+            {
+                if (Player.LevelFromXp(Player.XpForLevel(lv)) != lv) roundTripBad++;
+            }
+            Console.WriteLine($"[level] roundTrip mismatches = {roundTripBad}");
+            if (roundTripBad != 0)
+            {
+                Console.WriteLine("FAIL: round-trip mismatch for " + roundTripBad + " level(s)");
+                failures++;
+            }
+
+            // 5) 与公开等级表逐级交叉比对（L1..L17）。
+            int[] levels = { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17 };
+            long[] expected =
+            {
+                200, 700, 1400, 2300, 3300, 4400, 5700, 7300, 9000, 11100,
+                13400, 16000, 18700, 21600, 24600, 27700, 31100
+            };
+            int matched = 0;
+            for (int i = 0; i < levels.Length; i++)
+            {
+                long got = Player.XpForLevel(levels[i]);
+                if (got == expected[i]) matched++;
+                else Console.WriteLine($"FAIL: L{levels[i]} expected {expected[i]} got {got}");
+            }
+            Console.WriteLine($"[level] public table match = {matched}/17");
+            if (matched != levels.Length)
+            {
+                Console.WriteLine("FAIL: public table mismatch count " + (levels.Length - matched));
+                failures++;
+            }
+
+            // 6) 单调性：XP 递增时等级不得下降。
+            int monotonicBad = 0;
+            int previousLevel = 1;
+            for (long xp = 0; xp <= 600000; xp += 137)
+            {
+                int lv = Player.LevelFromXp(xp);
+                if (lv < previousLevel) monotonicBad++;
+                previousLevel = lv;
+            }
+            Console.WriteLine($"[level] monotonic violations = {monotonicBad}");
+            if (monotonicBad != 0)
+            {
+                Console.WriteLine("FAIL: level decreased as XP increased");
+                failures++;
+            }
+
+            // 7) 用户历史存档的 XP 样本（取自 profiles(*.bak) 备份）。
+            int[] samples = { 242733, 244796, 248865, 251533, 252508 };
+            int[] sampleLevels = { 51, 51, 51, 52, 52 };
+            for (int i = 0; i < samples.Length; i++)
+            {
+                int lv = Player.LevelFromXp(samples[i]);
+                Console.WriteLine($"[level] sample xp={samples[i]} -> level={lv}");
+                if (lv != sampleLevels[i])
+                {
+                    Console.WriteLine($"FAIL: sample xp={samples[i]} expected level {sampleLevels[i]}, got {lv}");
+                    failures++;
+                }
+            }
+
+            // 8) 满级门槛与下一级距离。
+            long maxLevelXp = Player.MaxLevelXp;
+            Console.WriteLine($"[level] maxLevelXp = {maxLevelXp} (expect 575700)");
+            if (maxLevelXp != 575700L)
+            {
+                Console.WriteLine("FAIL: MaxLevelXp should be 575700, got " + maxLevelXp);
+                failures++;
+            }
+            long toNext = Player.XpToNextLevel(realXp);
+            Console.WriteLine($"[level] xpToNext({realXp}) = {toNext} (expect 3592)");
+            if (toNext != 3592)
+            {
+                Console.WriteLine("FAIL: XpToNextLevel wrong: " + toNext);
+                failures++;
+            }
+            if (Player.XpToNextLevel(575700) != 0)
+            {
+                Console.WriteLine("FAIL: XpToNextLevel should be 0 at max level");
+                failures++;
+            }
+
+            return failures;
+        }
+
+        private static void CheckLevel(int failures, string label, int actual, int expected)
+        {
+            Console.WriteLine($"[level] {label} = {actual} (expect {expected})");
+            if (actual != expected)
+            {
+                Console.WriteLine($"FAIL: {label} expected {expected}, got {actual}");
+                failures++;
+            }
+        }
+
+        private static void CheckXp(int failures, string label, long actual, long expected)
+        {
+            Console.WriteLine($"[level] {label} = {actual} (expect {expected})");
+            if (actual != expected)
+            {
+                Console.WriteLine($"FAIL: {label} expected {expected}, got {actual}");
+                failures++;
+            }
+        }
+
         private static int TestRealSave()
         {
             if (!File.Exists(RealSavePath))

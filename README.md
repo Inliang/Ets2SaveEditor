@@ -35,7 +35,7 @@ Ets2SaveEditor 会自动识别上述格式：`ScsC` → AES-256-CBC 解密 → z
 | | 自动探测本地与 Steam 存档 | ✅ 已实现 | 右侧「档案与存档」面板按 **游戏 → 档案 → 存档槽** 三级下拉选择 |
 | | 打开存档 / 保存 / 另存为 | ✅ 已实现 | 保存写回**明文 SII**；加密源文件**强制备份**为 `.bak.<时间戳>` |
 | **玩家档案** | 修改账户金钱 | ✅ 已实现 | 调整 `bank.money_account` |
-| | 修改玩家经验 / 等级 | ✅ 已实现 | 经验值 → 自动推导等级（内置 XP 表） |
+| | 修改玩家经验 / 等级 | ✅ 已实现 | 经验值 → 自动推导等级，等级表取自游戏自身 `def.scs` 的 `level_xp[]`（权威数据，见下文） |
 | | 修改驾驶技能 | ✅ 已实现 | 长距 / 重载 / 易碎 / 加急 / 经济驾驶 |
 | **卡车 / 挂车** | 卡车修理 / 加油 | ✅ 已实现 | 一键清零磨损、加满燃油 |
 | | 挂车修理 | ✅ 已实现 | 一键清零挂车磨损 |
@@ -90,7 +90,7 @@ Ets2SaveEditor/
 │   │   │   ├── IUnitCollection.cs
 │   │   │   └── TypedUnits/             # 类型化便捷读写层
 │   │   │       ├── Bank.cs             # 金钱 / 贷款
-│   │   │       ├── Player.cs           # 经验 / 等级 / 技能（内置 XP 表）
+│   │   │       ├── Player.cs           # 经验 / 等级 / 技能（等级表取自游戏 def.scs）
 │   │   │       ├── Garage.cs           # 状态 / 位置 / 升级 / 购买
 │   │   │       ├── Vehicle.cs          # 磨损 / 燃油 / 修理 / 加油
 │   │   │       ├── Trailer.cs          # 磨损 / 修理
@@ -111,8 +111,10 @@ Ets2SaveEditor/
 │       ├── Views/                      # 对应 8 个标签页的 XAML 视图
 │       ├── Services/DialogService.cs   # 文件/文件夹选择、消息框
 │       └── Converters/WearToColorConverter.cs  # 磨损 → 颜色画刷
-└── tests/
-    └── Ets2SaveEditor.Tests/           # 端到端集成测试（合成存档全链路验证）
+├── tests/
+│   └── Ets2SaveEditor.Tests/           # 端到端集成测试（合成存档全链路验证）
+└── tools/
+    └── extract_level_xp.py             # 从游戏 def.scs 提取权威等级表（游戏升级后重跑）
 ```
 
 ---
@@ -147,6 +149,39 @@ dotnet run --project tests/Ets2SaveEditor.Tests
   （ETS2 的 Steam AppId 为 `227300`）
 
 > 工具也内置了「存档位置探测」功能，可在「设置」页启用 Steam 自动探测。
+
+---
+
+## 📐 等级换算表的数据来源
+
+游戏**不存等级**，存档里只有累计经验值 `economy.experience_points`，等级需要按游戏自己的曲线换算。
+这条曲线定义在游戏安装目录 `def.scs` 内的 `xp_level_data` 块：
+
+```
+# experience points to the next level
+level_xp[0]: 200      # ← 增量语义：从等级 i 升到 i+1 所需 XP，不是累计值
+...
+level_xp[29]: 6800
+```
+
+本工具内置的等级表即由此提取（前 30 项用 `def.scs` 原值，30 级之后游戏沿用最后一项 6800，
+累加到 100 级恰为 575,700 XP）。三重交叉验证：
+
+1. 增量累加后与公开等级表逐级比对，L1..L17 共 **17/17 精确匹配**；
+2. 累加到 L100 = 99,700 + 70 × 6,800 = **575,700**，与 100 级（Divine Champion）门槛精确相等；
+3. 真实存档 `experience_points = 252,508` 推导为 **52 级**，与游戏内显示一致。
+
+> ⚠️ 网上流传的**分段**等级门槛表（如「50 级需 249,700 XP」）是**旧版本数据**，与当前游戏曲线
+> 存在 100~14000 XP 的偏差，不要据以校准。本工具以游戏自身 `def.scs` 为准。
+
+游戏版本升级后，用下面的命令重新提取并同步到 `Player.cs`：
+
+```bash
+python tools/extract_level_xp.py "<ETS2 安装目录>/def.scs"
+```
+
+脚本会解压归档、解析 `level_xp[]`、展开累计门槛表，并跑三项自校验（满级门槛、公开表逐级比对、
+真实存档实测值），输出「全部校验通过」方可用于更新。
 
 ---
 

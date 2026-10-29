@@ -530,6 +530,7 @@ graph TD
    - 金钱：`bank` unit 的 `money_account`（INT64）。
    - 贷款：`bank` unit 的 `loans`（ID 数组，指向 `bank_loan` unit）；`loan_limit` 为授信额度。
    - 等级 / 经验：**`economy` unit** 的 `experience_points`（UINT32），技能 `long_dist` / `heavy` / `fragile` / `urgent` / `ecodriving` 同在该 unit（0–6）。
+     真实存档中该值经游戏自身三处独立印证：`economy.experience_points`、游戏写的 `profile.sii`（`user_profile.cached_experience`）、以及 `save/<槽>/info.sii`（`save_container.info_players_experience`），三者在同一存档上完全一致。
    - 车库：`garage` unit 的 `vehicles` / `drivers` / `trailers`（ID 数组）、`status`（真实存档恒为 3）、`profit_log`、`productivity`。
    - 卡车磨损：`vehicle` unit 的 `engine_wear` / `transmission_wear` / `cabin_wear` / `chassis_wear`（FLOAT，十六进制浮点）+ `wheels_wear`（数组）；剩余油量在 `fuel_relative`。
    - 挂车：`trailer` unit 的 `trailer_definition` / `trailer_body_wear` / `chassis_wear` / `wheels_wear`。
@@ -540,6 +541,51 @@ graph TD
 5. **数值边界与校验**：金钱 / 等级 / 技能是否对齐游戏内上限；超限策略（截断 / 警告 / 拒绝）。
 6. **Mod 数据来源（P2-5）**：创意工坊订阅目录解析优先级是否高于编队控制包（P2-3），需产品确认。
 7. **城市 / 货物 / 公司清单**：`BuiltInGameData` v1 仅内置少量（如基础 20+ 城市），需随 DLC / 版本扩充策略。
+
+### 8.1 等级换算表的数据来源（已从游戏数据文件逆向确认）
+
+游戏**不存等级**，只存累计经验值 `economy.experience_points`，等级需按游戏自己的曲线换算。
+该曲线定义在游戏安装目录 `def.scs`（SCS# v2 归档）内的 `xp_level_data : economy.data.xp_levels` 块：
+
+```
+xp_level_data : economy.data.xp_levels
+{
+	level_names[]: "0|@@lvl_name0@@"      # 等级名边界：0/5/10/15/20/25/30/40/50/100
+	...
+	# experience points to the next level
+	level_xp[0]: 200                        # ← 增量语义：从等级 i 升到 i+1 所需 XP，非累计值
+	...
+	level_xp[29]: 6800
+	driver_xp_scale: 2.0
+}
+```
+
+**关键语义**：`level_xp[i]` 是「从等级 i 升到等级 i+1 所需的 XP **增量**」，不是累计值——这是最容易搞错的地方。
+
+`def.scs` 只显式给出 `level_xp[0..29]`（前 30 级）；30 级之后游戏沿用最后一项 6800。累加到 L100 得
+`99,700 + 70 × 6,800 = 575,700`，与公开资料中 100 级（Divine Champion）的门槛**分毫不差**，印证了这一外推规则。
+
+实现位置：`src/Ets2SaveEditor.Core/Domain/TypedUnits/Player.cs`
+- `LevelXpIncrements` — 增量表（索引 i = 等级 i→i+1）
+- `LevelXpThresholds[L]` — 升到等级 L 所需的累计 XP（L 从 1 到 100 有效，索引 0 仅占位）
+- `LevelFromXp(xp)` / `XpForLevel(level)` / `XpToNextLevel(xp)` — 换算与进度
+
+**三重交叉验证**：
+1. 增量累加后与公开等级表逐级比对，L1..L17 共 **17/17 精确匹配**（200, 700, 1400, …, 31100）；
+2. 累加到 L100 = 575,700，与「Divine Champion」门槛精确相等；
+3. 真实存档 `experience_points = 252,508` 推导为 **52 级**，与游戏内显示一致（早期猜测表给出的是 21 级，即用户报告的错误）。
+
+> 注：公开 Wiki 上的**分段**门槛表（L5=3400 / L30=103700 / L50=249700 等）与本游戏实际曲线存在
+> 100~14000 XP 的系统性偏差，属于**旧版本数据**，不可采用；其中 L100=575700 恰好与本表一致，
+> 反而印证了尾部外推规则。
+
+**版本升级维护**：游戏更新后用 `tools/extract_level_xp.py` 重新提取并同步 `Player.cs` 中的表：
+
+```bash
+python tools/extract_level_xp.py "<ETS2 安装目录>/def.scs"
+```
+
+脚本会自动解压归档、解析 `level_xp[]`、展开累计门槛表，并跑三项自校验（满级门槛、公开表逐级比对、真实存档实测值），输出「全部校验通过」方可用于更新。
 
 ---
 
