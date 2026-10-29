@@ -90,8 +90,11 @@ def iter_entries(handle, toc, count, size, max_size=8 * 1024 * 1024):
         yield i, raw
 
 
-def extract_definitions(path):
-    """从 def.scs 提取所有定义类型：{类型: {标识: 名称}}。"""
+def extract_definitions(path, kinds=None):
+    """从归档里提取定义类型：{类型: {标识: 名称}}。
+
+    ``kinds`` 不为空时只提取指定的类型（扫描大归档时省时间）。
+    """
     loaded = read_toc(path)
     if not loaded:
         print('  跳过（目录表不可用）: %s' % os.path.basename(path))
@@ -105,9 +108,37 @@ def extract_definitions(path):
         text = raw.decode('utf-8', 'replace')
         for m in DEF_RE.finditer(text):
             kind, ident, name = m.group(1), m.group(2), m.group(3)
+            if kinds and kind not in kinds:
+                continue
             defs.setdefault(kind, {})[ident] = name
     handle.close()
     return defs
+
+
+def extract_cargo_catalogue(root):
+    """提取**完整的**货物定义：def.scs + 所有 dlc_*.scs 的 cargo_data。
+
+    DLC 归档里也有 cargo_data（万圣节、农用机械、工程车等 DLC 各自带一批），
+    def.scs 只覆盖基础游戏的 397 项。合并后才有「游戏能派发的全部货物」。
+
+    DLC 里的货物名是 ``@@cn_xxx@@`` 占位符，而且**键名与 token 尾段并不一致**
+    （``cargo.art_dumper`` → ``@@cn_articulated_hauler@@``、
+    ``cargo.tractor`` → ``@@cn_rstractor@@``），所以只能靠占位符本身去查
+    locale.scs，不能按 token 尾段猜。
+    """
+    merged = {}
+    archives = ['def.scs'] + sorted(
+        name for name in os.listdir(root)
+        if name.startswith('dlc_') and name.endswith('.scs'))
+    for name in archives:
+        path = os.path.join(root, name)
+        if not os.path.exists(path):
+            continue
+        found = extract_definitions(path, kinds=('cargo_data',)).get('cargo_data', {})
+        if found:
+            merged.update(found)
+            print('  %-30s +%d（累计 %d）' % (name, len(found), len(merged)))
+    return merged
 
 
 def extract_locale(path):
@@ -190,6 +221,16 @@ def main():
     print('读取本地化：%s' % locale_path)
     locale = extract_locale(locale_path)
     print('  英文条目 %d' % len(locale))
+
+    # 完整的货物目录：def.scs + 所有 dlc_*.scs 的 cargo_data
+    print('合并货物定义（def.scs + dlc_*.scs）：')
+    cargo_all = extract_cargo_catalogue(root)
+    for token, name in cargo_all.items():
+        name = resolve(name, locale)
+        if name.startswith('@@'):
+            continue
+        defs.setdefault('cargo_data', {})[token] = name
+    print('  cargo_data 合计 %d' % len(defs.get('cargo_data', {})))
 
     # 把占位符换成实际名称
     resolved = {}

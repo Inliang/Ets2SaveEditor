@@ -429,9 +429,33 @@ namespace Ets2SaveEditor.Core.GameData
         /// </summary>
         public static IEnumerable<string> Tokens => AllTokenList.Value;
 
-        /// <summary>货物 token 全集（懒加载）。</summary>
+        /// <summary>
+        /// 货物 token 全集（懒加载）。
+        /// </summary>
         private static readonly Lazy<List<string>> AllTokenList =
             new Lazy<List<string>>(BuildAllTokens);
+
+        /// <summary>
+        /// 可选货物清单：游戏当前版本能派发的货物（418 项）。
+        /// <para>
+        /// = <see cref="GameNames.Cargo"/> 去掉 <c>cargo_obsole.*</c>。后者是
+        /// **游戏自己标注的过时货物**（前缀就是 obsolete）：游戏自身从不派发它们
+        /// （实测存档里 5528 条游戏生成的任务没有一条引用它们），放进可选清单
+        /// 只会让用户选到游戏不会派发的货。它们仍然保留在
+        /// <see cref="GameNames.Cargo"/> 里，供查阅老存档用。
+        /// </para>
+        /// </summary>
+        public static IEnumerable<string> SelectableTokens
+        {
+            get
+            {
+                foreach (string token in GameNames.Cargo.Keys)
+                {
+                    if (token.StartsWith("cargo_obsole.", StringComparison.OrdinalIgnoreCase)) continue;
+                    yield return token;
+                }
+            }
+        }
 
         /// <summary>合并三个来源，得到货物 token 全集。</summary>
         private static List<string> BuildAllTokens()
@@ -441,6 +465,8 @@ namespace Ets2SaveEditor.Core.GameData
 
             foreach (string token in GameNames.Cargo.Keys)
             {
+                // 游戏自己标注的过时货物（cargo_obsole.*）游戏从不派发，
+                // 费率表里也不需要它们。
                 if (token.StartsWith("cargo_obsole.", StringComparison.OrdinalIgnoreCase)) continue;
                 if (seen.Add(token)) result.Add(token);
             }
@@ -487,26 +513,122 @@ namespace Ets2SaveEditor.Core.GameData
         /// <summary>
         /// Returns a human-readable name for a cargo token.
         /// <para>
-        /// 三级查表：
+        /// 四级查表：
         /// <list type="number">
-        /// <item><see cref="GameNames.Cargo"/> —— 权威表（def.scs 的 cargo_data，397 项）。</item>
+        /// <item><see cref="GameNames.Cargo"/> —— 权威表（def.scs + 全部 dlc_*.scs 的
+        /// cargo_data 合并，489 项）。</item>
         /// <item><see cref="GameNames.LocalizedCargo"/> —— 本地化兜底（locale.scs 的
-        /// cn_* 键，425 项），覆盖 cargo_data 没收录、但游戏仍在用或老存档里
-        /// 还留着的 token（如 <c>cargo.driller</c>、<c>cargo.cable_reel</c>）。</item>
+        /// cn_* 键，425 项），覆盖 cargo_data 没收录的 token。</item>
+        /// <item>游戏改名的旧 token：<c>cargo.x_apaints</c> 查不到时，
+        /// 试它的过时变体 <c>cargo_obsole.x_apaints</c>（同一个货物）。</item>
         /// <item>最后回退到 token 本身的可读形式（<c>cargo.haulie</c> → "Haulie"）。</item>
         /// </list>
+        /// </para>
+        /// <para>
+        /// 英文本地化里「散装 / 箱装 / 罐装」是同一个名字（Apples / Apples_c、
+        /// Milk / Milk_t …），所以**不同 token 会撞名**。这里给撞名的 token
+        /// 加上 token 后缀（<c>Apples (cargo.apples_c)</c>），保证两个不同的
+        /// 货物永远不会显示成同一个名字。
         /// </para>
         /// </summary>
         public static string DisplayName(string cargoToken)
         {
             if (string.IsNullOrEmpty(cargoToken)) return string.Empty;
 
+            var map = DisplayNameMap.Value;
+            string name;
+            if (map.TryGetValue(cargoToken, out name)) return name;
+
+            // 目录里没有的 token（老存档残留）：算一个可读名字；
+            // 若与目录里的某个名字撞了，补上 token 以保证两两可区分。
+            string fallback = BaseName(cargoToken);
+            if (TakenNames.Value.Contains(fallback)) return fallback + " (" + cargoToken + ")";
+            return fallback;
+        }
+
+        /// <summary>
+        /// 显示名表：token → 最终显示名（撞名的已加 token 后缀）。懒加载。
+        /// </summary>
+        private static readonly Lazy<Dictionary<string, string>> DisplayNameMap =
+            new Lazy<Dictionary<string, string>>(BuildDisplayNames);
+
+        /// <summary>目录里所有用过的「基础名」（未加后缀），用于查重。</summary>
+        private static readonly Lazy<HashSet<string>> TakenNames =
+            new Lazy<HashSet<string>>(BuildTakenNames);
+
+        /// <summary>
+        /// 计算所有已知 token 的显示名：先算基础名，同名的整组都加上 token 后缀。
+        /// <para>
+        /// 只对**游戏真实定义过的货物**（<see cref="GameNames.Cargo"/>）分组：
+        /// 本地化兜底表里的键是按 <c>cn_&lt;尾段&gt;</c> 机械转换来的，里面
+        /// 混着「同一件东西的不同缩写」（cn_aircft_tires 与 cn_aircraft_tires），
+        /// 拿它们参与分组会把几乎所有名字都判成撞名。
+        /// </para>
+        /// </summary>
+        private static Dictionary<string, string> BuildDisplayNames()
+        {
+            var baseNames = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            var groups = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+            foreach (string token in GameNames.Cargo.Keys)
+            {
+                string baseName = BaseName(token);
+                if (string.IsNullOrEmpty(baseName)) continue;
+                baseNames[token] = baseName;
+
+                List<string> group;
+                if (!groups.TryGetValue(baseName, out group))
+                {
+                    group = new List<string>();
+                    groups[baseName] = group;
+                }
+                group.Add(token);
+            }
+
+            var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var pair in baseNames)
+            {
+                List<string> group = groups[pair.Value];
+                result[pair.Key] = group.Count > 1
+                    ? pair.Value + " (" + pair.Key + ")"
+                    : pair.Value;
+            }
+            return result;
+        }
+
+        /// <summary>所有基础名（未加后缀），用于判断某个名字是否已被占用。</summary>
+        private static HashSet<string> BuildTakenNames()
+        {
+            var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (string name in DisplayNameMap.Value.Values)
+            {
+                // 去掉可能存在的 " (token)" 后缀，只留基础名。
+                int bracket = name.LastIndexOf(" (", StringComparison.Ordinal);
+                names.Add(bracket > 0 ? name.Substring(0, bracket) : name);
+            }
+            return names;
+        }
+
+        /// <summary>
+        /// 计算 token 的「基础名」：四级查表，不做撞名处理。
+        /// </summary>
+        private static string BaseName(string cargoToken)
+        {
+            if (string.IsNullOrEmpty(cargoToken)) return string.Empty;
+
             string name = GameNames.Lookup(GameNames.Cargo, cargoToken);
             if (!string.IsNullOrEmpty(name)) return name;
 
-            // 本地化兜底：cargo_data 没收录的 token（游戏仍在用 / 老存档残留）。
+            // 本地化兜底：cargo_data 没收录的 token。
             name = GameNames.Lookup(GameNames.LocalizedCargo, cargoToken);
             if (!string.IsNullOrEmpty(name)) return name;
+
+            // 游戏改名的旧 token：cargo.x_xxx 的过时变体是 cargo_obsole.x_xxx。
+            if (cargoToken.StartsWith("cargo.", StringComparison.OrdinalIgnoreCase))
+            {
+                string obsolete = "cargo_obsole." + cargoToken.Substring("cargo.".Length);
+                name = GameNames.Lookup(GameNames.Cargo, obsolete);
+                if (!string.IsNullOrEmpty(name)) return name;
+            }
 
             // 回退：把 token 变成可读形式。先去掉命名空间前缀
             // （cargo. / company. 等），再把下划线换成空格。

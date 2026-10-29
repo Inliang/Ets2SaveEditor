@@ -8,9 +8,15 @@ namespace Ets2SaveEditor.Core.GameData
     /// Built-in game data, backed by the authoritative catalogues.
     /// <para>
     /// 城市来自 <see cref="CityCatalogue"/>（从真实存档提取的 334 个城市，
-    /// 中文名）；货物来自 <see cref="GameNames.Cargo"/>（def.scs 的 cargo_data，
-    /// 397 项**当前游戏真实存在**的货物，token 形如 <c>cargo.gummy_bears</c>）；
-    /// 货运公司来自 <see cref="GameNames.Company"/>。
+    /// 中文名）；货物来自 <see cref="GameNames.Cargo"/>（def.scs + 全部 dlc_*.scs
+    /// 的 cargo_data 合并，489 项**游戏真实存在**的货物，token 形如
+    /// <c>cargo.gummy_bears</c>）；货运公司来自 <see cref="GameNames.Company"/>。
+    /// </para>
+    /// <para>
+    /// 货物列表保留游戏标注的过时货物（<c>cargo_obsole.*</c>）：它们虽然不会
+    /// 再被派发，但老存档里可能还留着，查得到才认得出那是什么货。可选清单
+    /// （货运市场的下拉框）则用 <see cref="CargoCatalogue.SelectableTokens"/>，
+    /// 已经把它们排除掉了。
     /// </para>
     /// <para>
     /// 这里不再维护第二份手写清单：早期版本内置的 28 个英文城市和 10 个

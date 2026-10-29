@@ -292,17 +292,18 @@ namespace Ets2SaveEditor.ViewModels
         /// Builds the cargo picker entries (token + readable name), sorted by
         /// the readable name.
         /// <para>
-        /// 数据源是 <see cref="GameNames.Cargo"/>（def.scs 的 cargo_data，397 项）
-        /// —— 也就是**当前游戏版本真实存在的货物**。不能用费率表
-        /// （<see cref="CargoCatalogue.Tokens"/>）：那张表是按存档实测手工建的，
-        /// 混着当前游戏已经不认的旧 token（cargo.haulie、cargo.cable_reel …），
+        /// 数据源是 <see cref="CargoCatalogue.SelectableTokens"/>（def.scs + 全部
+        /// dlc_*.scs 的 cargo_data 合并，去掉游戏标注的过时货物
+        /// <c>cargo_obsole.*</c>）—— 也就是**当前游戏版本真实会派发的货物**。
+        /// 不能用费率表（<see cref="CargoCatalogue.Tokens"/>）：那张表是按存档
+        /// 实测手工建的，混着游戏已经不认的旧 token（cargo.haulie 等），
         /// 用户选了写进存档，游戏不认。
         /// </para>
         /// </summary>
         private static List<CargoChoice> BuildCargoChoices()
         {
             var cargoList = new List<CargoChoice>();
-            foreach (var token in GameNames.Cargo.Keys)
+            foreach (var token in CargoCatalogue.SelectableTokens)
             {
                 string name = CargoCatalogue.DisplayName(token);
                 if (string.IsNullOrEmpty(name)) continue;

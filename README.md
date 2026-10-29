@@ -47,7 +47,7 @@ Ets2SaveEditor 会自动识别上述格式：`ScsC` → AES-256-CBC 解密 → z
 | | 从已探索城市抓取货物 | ✅ 已实现 | 解锁城市后，其货运市场即可在游戏内使用；工具内可直接浏览该城市的任务 |
 | **货运市场** | 创建自定义货运任务 | ✅ 已实现 | 「货运市场」页签可新建任务：创建 `job_offer_data` 单元**并注册到公司**的 `job_offer` 数组（缺一不可，游戏才认）；公司与货物均为可读名称下拉；公司筛选支持**显示名 / 品牌 / 公司 id / 城市名**（忽略大小写） |
 | | 任务报酬估算 | ✅ 已实现 | 实时显示「预估报酬」与「每公里报酬」；费率取自真实存档的 `delivery_log_entry` 实测数据 |
-| | 货物市场浏览 / 编辑 | ✅ 已实现 | 浏览**游戏自带**的城市（334 个，中文名）与货物（397 种，真实 token）目录，支持按名称 / token 筛选 |
+| | 货物市场浏览 / 编辑 | ✅ 已实现 | 浏览**游戏自带**的城市（334 个，中文名）与货物（489 种，真实 token）目录，支持按名称 / token 筛选 |
 | **分享 / 协作** | 分享卡车位置 | 🔲 规划中 | 导出 / 导入卡车坐标（P2） |
 | | 分享 GPS 路径 | 🔲 规划中 | 导出 / 导入导航路径（P2） |
 | | 编队控制包 | 🔲 规划中 | 多卡车位置打包为 Convoy Control 包（P2） |
@@ -142,7 +142,7 @@ Ets2SaveEditor/
 │   └── Ets2SaveEditor.Tests/           # 端到端集成测试（合成存档全链路验证）
 └── tools/
     ├── extract_level_xp.py             # 从游戏 def.scs 提取权威等级表（游戏升级后重跑）
-    └── extract_names.py               # 从 def.scs + locale.scs 提取货物/品牌显示名
+    └── extract_names.py               # 从 def.scs + dlc_*.scs + locale.scs 提取货物/品牌显示名
 ```
 
 ---
@@ -221,9 +221,10 @@ python tools/extract_level_xp.py "<ETS2 安装目录>/def.scs"
 | 文件 | 内容 | 提取结果 |
 | --- | --- | --- |
 | `def.scs` | 定义表（`cargo_data`、`company_permanent` …） | 货物 397 项、品牌 138 项 |
+| `dlc_*.scs` | 各 DLC 的定义（万圣节、农用机械、工程车…） | 再加 92 项货物 |
 | `locale.scs` | 本地化字符串（`key[]` / `val[]`） | 英文 5482 条（其中 `cn_*` 425 条） |
 
-两张表在 `tools/extract_names.py` 里关联起来（定义里的 `@@cn_xxx@@` 占位符会被换成
+几张表在 `tools/extract_names.py` 里关联起来（定义里的 `@@cn_xxx@@` 占位符会被换成
 实际名称），结果内嵌进 `src/Ets2SaveEditor.Core/GameData/GameNames.cs`，
 因此程序**不依赖**运行时能否读到游戏安装目录。
 
@@ -233,17 +234,32 @@ python tools/extract_level_xp.py "<ETS2 安装目录>/def.scs"
 python tools/extract_names.py "<ETS2 安装目录>" game_names.json
 ```
 
-> **货物显示名是三级查表**：
-> ① `GameNames.Cargo`（权威表，来自 `def.scs` 的 `cargo_data`，397 项）→
-> ② `GameNames.LocalizedCargo`（本地化兜底，来自 `locale.scs` 的 `cn_*` 键，425 项）→
-> ③ token 的可读形式（`cargo.haulie` → "Haulie"）。
-> 存档是**历史累积**的，里面可能有当前游戏版本已经不认的旧 token
-> （`cargo.haulie`、`cargo.cable_reel` …），这三级保证它们也显示得可读，
-> 而不是空白或一串看不懂的下划线。
+> **货物目录 = `def.scs` + 全部 `dlc_*.scs` 的 `cargo_data`（489 项）**。
+> 只扫 `def.scs` 会漏掉 92 项 DLC 货物（`cargo.disc_harrows`、`cargo.driller`、
+> `cargo.cable_reel` …）。DLC 里的货物名是 `@@cn_xxx@@` 占位符，而且**键名与
+> token 尾段并不一致**（`cargo.art_dumper` → `@@cn_articulated_hauler@@`），
+> 所以只能靠占位符本身去查 `locale.scs`，不能按 token 尾段猜。
 
-> **可选货物清单 = `GameNames.Cargo`（397 项）**，也就是当前游戏版本真实存在的货物。
-> 不能拿费率表（`CargoCatalogue.Tokens`）当清单：那张表是按存档实测手工建的，
-> 混着当前游戏已经不认的旧 token，用户选了写进存档，游戏不认。
+> **货物显示名是四级查表**：
+> ① `GameNames.Cargo`（权威表，489 项）→
+> ② `GameNames.LocalizedCargo`（本地化兜底，来自 `locale.scs` 的 `cn_*` 键，425 项）→
+> ③ 游戏改名的旧 token（`cargo.x_apaints` → 试它的过时变体 `cargo_obsole.x_apaints`）→
+> ④ token 的可读形式（`cargo.haulie` → "Haulie"）。
+> 存档是**历史累积**的，里面可能有当前游戏版本已经不认的旧 token，这四级保证它们
+> 也显示得可读，而不是空白或一串看不懂的下划线。
+
+> **同名会被消歧**：英文本地化里「散装 / 箱装 / 罐装」是同一个名字
+>（Apples 与 Apples_c、Milk 与 Milk_t、Cars 有 8 个 …），所以撞名的货物会带上
+> token 后缀（`Apples (cargo.apples_c)`），保证**两个不同的货物永远不会显示成
+> 同一个名字**。
+
+> **可选货物清单 = 489 项去掉 `cargo_obsole.*`（418 项）**，也就是游戏当前版本
+> 真实会派发的货物。`cargo_obsole.*` 是**游戏自己标注的过时货物**（前缀就是
+> obsolete）：游戏自身从不派发它们（实测存档里 5528 条游戏生成的任务没有一条
+> 引用它们），放进可选清单只会让用户选到游戏不会派发的货；它们仍然保留在
+> 「货物」页里，供查阅老存档用。
+> 另外也不能拿费率表（`CargoCatalogue.Tokens`）当清单：那张表是按存档实测
+> 手工建的，混着游戏已经不认的旧 token（`cargo.haulie` 等）。
 
 > **卡车型号无法显示**：游戏存档里根本没有车型字段（`vehicle` 单元只有磨损、油量、车牌等），
 > 卡车的型号名只存在于 3D 模型资源中，因此工具以**车牌 + 所属车库**标识卡车。

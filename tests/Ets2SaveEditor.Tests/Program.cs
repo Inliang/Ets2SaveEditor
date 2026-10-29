@@ -167,7 +167,12 @@ namespace Ets2SaveEditor.Tests
             // 数组必须以 "name: count" + "name[i]: value" 的形式保存。
             string saved = File.ReadAllText(outPath);
             bool arrayOk = saved.Contains("visited_cities: 2") && saved.Contains("visited_cities[0]: city.odense");
-            bool hexOk = !saved.Contains("0.7") && !saved.Contains("wear : ");
+
+            // 浮点必须写成游戏的十六进制形式（&xxxxxxxx），不能出现十进制小数。
+            // 注意只判断「": 0.7"」这种带值前缀的形态：新建任务的随机 id
+            // （_nameless.1b0.7c41.5d68）里也可能出现 "0.7"，直接全文匹配
+            // 会让这条断言随机失败。
+            bool hexOk = !saved.Contains(": 0.7") && !saved.Contains("wear : ");
             Console.WriteLine($"[roundtrip] arrayOk={arrayOk} hexOk={hexOk}");
             if (!arrayOk) { Console.WriteLine("FAIL: array serialization wrong"); failures++; }
             if (!hexOk) { Console.WriteLine("FAIL: value formatting wrong"); failures++; }
@@ -2569,21 +2574,24 @@ namespace Ets2SaveEditor.Tests
                 failures++;
             }
 
-            // 9) 下拉框的清单必须与 def.scs 的 cargo_data 完全一致：
-            //    - 竞速赛等 DLC 货物（cargo_obsole.*）必须能选到
-            //    - 当前游戏已经不认的旧 token（cargo.haulie 等）不能出现在清单里
-            //      （选它写进存档，游戏不认）
+            // 9) 下拉框的清单必须是「游戏真实会派发的货物」：
+            //    - DLC 货物（万圣节、农用机械、工程车…）必须能选到
+            //    - 游戏标注的过时货物（cargo_obsole.*）不能选 —— 游戏从不派发它们
+            //    - 当前游戏已经不认的旧 token（cargo.haulie 等）不能选
             var pickerTokens = new HashSet<string>(
                 freight.CargoChoices.Select(c => c.Token), StringComparer.OrdinalIgnoreCase);
-            bool pickerMatchesNamesTable = pickerTokens.Count == GameNames.Cargo.Count &&
-                                           GameNames.Cargo.Keys.All(pickerTokens.Contains);
-            bool noLegacyInPicker = !pickerTokens.Contains("cargo.haulie") &&
-                                    !pickerTokens.Contains("cargo.cable_reel");
-            Console.WriteLine($"[cargo] picker matches cargo_data={pickerMatchesNamesTable} " +
-                              $"no-legacy={noLegacyInPicker} (picker={pickerTokens.Count})");
-            if (!pickerMatchesNamesTable || !noLegacyInPicker)
+            var selectable = new HashSet<string>(
+                CargoCatalogue.SelectableTokens, StringComparer.OrdinalIgnoreCase);
+            bool pickerMatches = pickerTokens.Count == selectable.Count &&
+                                 selectable.All(pickerTokens.Contains);
+            bool noObsolete = !pickerTokens.Any(t => t.StartsWith("cargo_obsole.", StringComparison.OrdinalIgnoreCase));
+            bool noDelisted = !pickerTokens.Contains("cargo.haulie") &&
+                              !pickerTokens.Contains("cargo.hw25c1");
+            Console.WriteLine($"[cargo] picker matches selectable={pickerMatches} " +
+                              $"no-obsolete={noObsolete} no-delisted={noDelisted} (picker={pickerTokens.Count})");
+            if (!pickerMatches || !noObsolete || !noDelisted)
             {
-                Console.WriteLine("FAIL: the cargo picker does not match the game's cargo_data");
+                Console.WriteLine("FAIL: the cargo picker does not match the game's dispatchable cargo");
                 failures++;
             }
 
@@ -2663,15 +2671,37 @@ namespace Ets2SaveEditor.Tests
             int withResidue = 0;
             int viaNames = 0;
             int viaLocale = 0;
+            var names = new Dictionary<string, string>(StringComparer.Ordinal);
             foreach (string token in tokens)
             {
                 string name = CargoCatalogue.DisplayName(token);
                 if (string.IsNullOrWhiteSpace(name)) { blank++; continue; }
-                if (name.IndexOf("cargo.", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                    name.IndexOf("@@", StringComparison.Ordinal) >= 0)
+
+                // 撞名的货物会带 " (token)" 后缀，这是有意为之；去掉后不应再有
+                // 原始 token 残留或本地化占位符。
+                string bare = name;
+                int bracket = name.LastIndexOf(" (", StringComparison.Ordinal);
+                if (bracket > 0 && name.EndsWith(")", StringComparison.Ordinal))
+                {
+                    bare = name.Substring(0, bracket);
+                }
+                if (bare.IndexOf("cargo.", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    bare.IndexOf("@@", StringComparison.Ordinal) >= 0)
                 {
                     withResidue++;
                     Console.WriteLine($"  FAIL: '{token}' -> '{name}'");
+                }
+
+                // 不同 token 不能显示成同一个名字。
+                string? previous;
+                if (names.TryGetValue(name, out previous))
+                {
+                    withResidue++;
+                    Console.WriteLine($"  FAIL: '{token}' and '{previous}' both show as '{name}'");
+                }
+                else
+                {
+                    names[name] = token;
                 }
 
                 if (GameNames.Lookup(GameNames.Cargo, token).Length > 0) viaNames++;
@@ -2679,7 +2709,7 @@ namespace Ets2SaveEditor.Tests
             }
 
             Console.WriteLine($"[cargonames] tokens in save={tokens.Count} via-names-table={viaNames} " +
-                              $"via-locale={viaLocale} blank={blank} residue={withResidue}");
+                              $"via-locale={viaLocale} blank={blank} residue/collision={withResidue}");
             if (blank != 0)
             {
                 Console.WriteLine("FAIL: " + blank + " cargo token(s) have no readable name");
@@ -2687,7 +2717,7 @@ namespace Ets2SaveEditor.Tests
             }
             if (withResidue != 0)
             {
-                Console.WriteLine("FAIL: " + withResidue + " cargo name(s) still contain a raw token or placeholder");
+                Console.WriteLine("FAIL: " + withResidue + " cargo name(s) are unreadable or not distinguishable");
                 failures++;
             }
 
@@ -2705,9 +2735,11 @@ namespace Ets2SaveEditor.Tests
 
             // 查不到任何名字的老 token 也要显示成可读形式（首字母大写）。
             bool legacyOk = CargoCatalogue.DisplayName("cargo.haulie") == "Haulie" &&
-                            CargoCatalogue.DisplayName("cargo.tractor_au") == "Tractor Au";
+                            CargoCatalogue.DisplayName("cargo.hw25c1") == "Hw25c1" &&
+                            CargoCatalogue.DisplayName("cargo.tmp_00") == "Tmp 00";
             Console.WriteLine($"[cargonames] legacy token fallback = '{CargoCatalogue.DisplayName("cargo.haulie")}' / " +
-                              $"'{CargoCatalogue.DisplayName("cargo.tractor_au")}'");
+                              $"'{CargoCatalogue.DisplayName("cargo.hw25c1")}' / " +
+                              $"'{CargoCatalogue.DisplayName("cargo.tmp_00")}'");
             if (!legacyOk)
             {
                 Console.WriteLine("FAIL: a legacy cargo token is not shown in a readable form");
