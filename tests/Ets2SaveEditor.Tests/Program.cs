@@ -2694,6 +2694,26 @@ namespace Ets2SaveEditor.Tests
                 }
             }
 
+            // 游戏自己生成的任务引用过的每一个货物 token，都必须能在可选清单里
+            // 找到 —— 否则用户想建一个和游戏里一样的任务却选不到那种货。
+            // （cargo.haulie 这类「没有 cargo_data 定义、但游戏在用」的货物
+            //   最容易漏：只用定义表做清单就会漏掉 33 种。）
+            var selectableSet = new HashSet<string>(
+                CargoCatalogue.SelectableTokens, StringComparer.OrdinalIgnoreCase);
+            int notSelectable = 0;
+            foreach (string token in tokens)
+            {
+                if (selectableSet.Contains(token)) continue;
+                notSelectable++;
+                Console.WriteLine($"  FAIL: '{token}' is used by the game but is not selectable");
+            }
+            Console.WriteLine($"[cargonames] game-used tokens not selectable = {notSelectable}");
+            if (notSelectable != 0)
+            {
+                Console.WriteLine("FAIL: " + notSelectable + " cargo token(s) the game uses are not selectable");
+                failures++;
+            }
+
             int blank = 0;
             int withResidue = 0;
             int viaNames = 0;
