@@ -24,9 +24,12 @@ namespace Ets2SaveEditor.Tests
         /// Real ETS2 save used for the optional integration test. The file is
         /// only ever read and copied to a temporary directory — it is never
         /// modified or overwritten.
+        /// <para>
+        /// 这是仓库里**唯一**允许出现的真实存档绝对路径（只读基准）。[nosavepath]
+        /// 断言会单独检查它，并要求它只被只读使用。
+        /// </para>
         /// </summary>
-        private static readonly string RealSavePath =
-            @"C:\Users\Administrator\Documents\Euro Truck Simulator 2\profiles\4361726F6C696E65E4B8B6\save\1\game.sii";
+        private static readonly string RealSavePath = @"C:\Users\Administrator\Documents\Euro Truck Simulator 2\profiles\4361726F6C696E65E4B8B6\save\1\game.sii";
 
         /// <summary>
         /// Root directory for all temporary test files.
@@ -88,6 +91,7 @@ namespace Ets2SaveEditor.Tests
             failures += TestCargoNames();
             failures += TestDocNumbers();
             failures += TestUiMenuEnable();
+            failures += TestNoRealSavePath();
             failures += TestNullReference();
             failures += TestRealSave();
 
@@ -3081,6 +3085,173 @@ namespace Ets2SaveEditor.Tests
                 System.Windows.Threading.DispatcherPriority.Background,
                 new Action(() => frame.Continue = false));
             System.Windows.Threading.Dispatcher.PushFrame(frame);
+        }
+
+        // ------------------------------------------------------------------
+        // 源码里不得出现指向真实存档目录的硬编码路径。
+        // ------------------------------------------------------------------
+
+        /// <summary>
+        /// 校验仓库源码里没有指向**真实存档目录**的硬编码路径。
+        /// <para>
+        /// 背景：发布 v0.0.11 前后，真实存档 <c>save/1/game.sii</c> 曾被写成明文
+        /// SII（5.6 MB，ETS2 原生保存写的是加密 <c>ScsC</c>），同目录多出
+        /// <c>game.sii.bak.&lt;时间戳&gt;</c>。触发源排查未能定位，但结论是明确的：
+        /// <b>不能依赖「我知道它不会写」</b> —— 只要自动化程序加载了真实存档并渲染
+        /// 界面，就存在触发写入的路径。所以这条约束要由机器保证，而不是靠自觉。
+        /// </para>
+        /// <para>
+        /// 两条检查：
+        /// ① 源码（src/ tests/ tools/，<b>排除注释</b>）里不得出现「盘符绝对路径 +
+        /// 真实存档目录特征」的组合；唯一豁免是测试项目里那处**只读基准**常量
+        /// <c>RealSavePath</c> 的声明行（它只被复制，从不写入）。
+        /// ② 测试项目里 <c>RealSavePath</c> 的**用法**必须只读（存在性检查 / 复制 /
+        /// 读取），任何写操作都会被抓出来。
+        /// </para>
+        /// </summary>
+        private static int TestNoRealSavePath()
+        {
+            int failures = 0;
+
+            string? root = FindRepoRoot();
+            if (root == null)
+            {
+                Console.WriteLine("[nosavepath] SKIP: 不在仓库内运行（找不到 .sln）");
+                return 0;
+            }
+
+            // 真实存档目录的特征：盘符绝对路径 + 「Euro Truck Simulator」或「profiles」。
+            var drivePath = new System.Text.RegularExpressions.Regex(@"[A-Za-z]:[\\/]");
+            var markers = new[] { "Euro Truck Simulator", "profiles" };
+            // 只读基准常量的标识符（用词边界，避免匹配到 TestNoRealSavePath 这类名字）。
+            var baselineId = new System.Text.RegularExpressions.Regex(
+                @"(?<![A-Za-z0-9_])RealSavePath(?![A-Za-z0-9_])");
+            // 任何写操作 API：出现在基准路径附近就是危险用法。
+            var writeApis = new[]
+            {
+                "File.WriteAllText", "File.WriteAllBytes", "File.WriteAllLines",
+                "File.Delete", "File.Move", "File.Create", "File.Replace",
+                "new FileStream", "new StreamWriter",
+            };
+
+            foreach (string dir in new[] { "src", "tests", "tools" })
+            {
+                string full = Path.Combine(root, dir);
+                if (!Directory.Exists(full)) continue;
+
+                foreach (string file in Directory.GetFiles(full, "*.*", SearchOption.AllDirectories))
+                {
+                    string ext = Path.GetExtension(file).ToLowerInvariant();
+                    if (ext != ".cs" && ext != ".py") continue;
+                    if (file.Contains(Path.DirectorySeparatorChar + "obj" + Path.DirectorySeparatorChar) ||
+                        file.Contains(Path.DirectorySeparatorChar + "bin" + Path.DirectorySeparatorChar)) continue;
+
+                    bool isPython = ext == ".py";
+                    bool inBlockComment = false;
+                    int lineNo = 0;
+                    foreach (string raw in File.ReadAllLines(file))
+                    {
+                        lineNo++;
+                        string code = StripComments(raw, isPython, ref inBlockComment);
+                        if (code.Length == 0) continue;
+
+                        // ① 硬编码真实存档路径（只读基准常量的声明行除外）。
+                        if (drivePath.IsMatch(code) &&
+                            markers.Any(m => code.IndexOf(m, StringComparison.OrdinalIgnoreCase) >= 0))
+                        {
+                            bool isBaselineDeclaration =
+                                baselineId.IsMatch(code) && code.Contains("=");
+                            if (!isBaselineDeclaration)
+                            {
+                                Console.WriteLine($"  FAIL: {Path.GetRelativePath(root, file)}:{lineNo} 硬编码了真实存档路径");
+                                Console.WriteLine($"        {raw.Trim()}");
+                                failures++;
+                            }
+                        }
+
+                        // ② 只读基准只能被只读使用。
+                        if (baselineId.IsMatch(code) &&
+                            writeApis.Any(w => code.Contains(w, StringComparison.Ordinal)))
+                        {
+                            Console.WriteLine($"  FAIL: {Path.GetRelativePath(root, file)}:{lineNo} 对真实存档做了写操作");
+                            Console.WriteLine($"        {raw.Trim()}");
+                            failures++;
+                        }
+                    }
+                }
+            }
+
+            Console.WriteLine($"[nosavepath] 源码里没有指向真实存档目录的硬编码路径 = {failures == 0}");
+            return failures;
+        }
+
+        /// <summary>
+        /// 去掉一行里的注释（字符串字面量里的 // 与 # 不算注释）。
+        /// </summary>
+        private static string StripComments(string line, bool isPython, ref bool inBlockComment)
+        {
+            var builder = new System.Text.StringBuilder();
+            bool inString = false;
+            bool inChar = false;
+
+            for (int i = 0; i < line.Length; i++)
+            {
+                char c = line[i];
+
+                if (inBlockComment)
+                {
+                    if (c == '*' && i + 1 < line.Length && line[i + 1] == '/')
+                    {
+                        inBlockComment = false;
+                        i++;
+                    }
+                    continue;
+                }
+
+                if (inString)
+                {
+                    builder.Append(c);
+                    if (c == '\\' && i + 1 < line.Length) { builder.Append(line[++i]); continue; }
+                    if (c == '"') inString = false;
+                    continue;
+                }
+                if (inChar)
+                {
+                    builder.Append(c);
+                    if (c == '\\' && i + 1 < line.Length) { builder.Append(line[++i]); continue; }
+                    if (c == '\'') inChar = false;
+                    continue;
+                }
+
+                if (c == '"') { inString = true; builder.Append(c); continue; }
+                if (!isPython && c == '\'') { inChar = true; builder.Append(c); continue; }
+
+                if (isPython && c == '#')
+                {
+                    break;   // 行注释
+                }
+                if (!isPython && c == '/' && i + 1 < line.Length)
+                {
+                    if (line[i + 1] == '/') break;                    // 行注释
+                    if (line[i + 1] == '*') { inBlockComment = true; i++; continue; }
+                }
+
+                builder.Append(c);
+            }
+
+            return builder.ToString();
+        }
+
+        /// <summary>找到仓库根目录（含 .sln 的那一层）；找不到返回 null。</summary>
+        private static string? FindRepoRoot()
+        {
+            var dir = new DirectoryInfo(AppContext.BaseDirectory);
+            while (dir != null)
+            {
+                if (Directory.GetFiles(dir.FullName, "*.sln").Length > 0) return dir.FullName;
+                dir = dir.Parent;
+            }
+            return null;
         }
 
         /// <summary>

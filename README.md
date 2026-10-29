@@ -169,6 +169,14 @@ dotnet run --project tests/Ets2SaveEditor.Tests
 
 构建成功后，在「文件」菜单中选择「打开文件」或「打开文件夹」，定位到 ETS2 的存档目录（见下文），即可开始编辑。
 
+> ⚠️ **自动化验证一律用副本（开发者须知）**
+> 任何自动化程序 —— 离屏渲染、截图工具、探针、性能基准、UI 回归 —— **都必须指向临时目录里的
+> 存档副本**，绝不能指向 `Documents\...\profiles\...\save\` 下的真实存档。即使程序不调用保存，
+> 只要它加载了真实存档并渲染界面，就存在触发写入的路径（发布 v0.0.11 前后真实存档曾被写成明文
+> SII，触发源未能定位）。仓库里的 `[nosavepath]` 断言会扫描源码、禁止硬编码真实存档路径；
+> 自动化脚本还应在运行**前后**比对真实存档的 `sha256sum`，让「没有副作用」可证伪。
+> 详见 [docs/ARCHITECTURE.md §7](docs/ARCHITECTURE.md)。
+
 ### 存档位置
 
 - **本地存档**：`文档\Euro Truck Simulator 2\profiles\<profile_id>\save\<slot>\`
