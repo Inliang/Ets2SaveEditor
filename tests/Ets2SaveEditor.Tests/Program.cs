@@ -2590,6 +2590,8 @@ namespace Ets2SaveEditor.Tests
             bool hasGameUsed = pickerTokens.Contains("cargo.haulie") &&
                                pickerTokens.Contains("cargo.haulie2") &&
                                pickerTokens.Contains("cargo.hw25c1") &&
+                               pickerTokens.Contains("cargo.hw25c2") &&
+                               pickerTokens.Contains("cargo.hw25c3") &&
                                pickerTokens.Contains("cargo.tmp_00");
             Console.WriteLine($"[cargo] picker matches selectable={pickerMatches} " +
                               $"no-obsolete={noObsolete} has-game-used={hasGameUsed} (picker={pickerTokens.Count})");
