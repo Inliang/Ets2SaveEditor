@@ -2513,6 +2513,7 @@ namespace Ets2SaveEditor.Tests
             }
 
             // 6) 没选货物时创建任务：必须回落到默认货物，不能写出空引用。
+            freight.NewCargo = string.Empty;
             freight.SelectedCompany = freight.Companies.FirstOrDefault();
             var company = freight.SelectedCompany;
             int offersBefore = company?.JobOfferCount ?? 0;
@@ -2531,6 +2532,39 @@ namespace Ets2SaveEditor.Tests
             if (!createdOk)
             {
                 Console.WriteLine("FAIL: creating a job without a cargo selection did not fall back to the default");
+                failures++;
+            }
+
+            // 7) 用户明确指定的货物 token 必须原样写进存档。
+            //    早期实现会因为它「不在下拉框目录里」就悄悄换成默认货物，
+            //    于是存档里出现与用户意图不符的货（DLC 货物 cargo.halloween
+            //    就曾被改成 cargo.haulie）。
+            freight.NewCargo = "cargo.halloween";
+            int jobsBeforeExplicit = sf.GetFreightJobs().Count;
+            freight.CreateJobCommand.Execute(null);
+
+            var jobsExplicit = sf.GetFreightJobs();
+            var createdExplicit = jobsExplicit.Count > jobsBeforeExplicit
+                ? jobsExplicit[jobsExplicit.Count - 1]
+                : null;
+            bool explicitOk = createdExplicit != null && createdExplicit.Cargo == "cargo.halloween";
+            Console.WriteLine($"[cargo] explicitly chosen cargo kept = {explicitOk} " +
+                              $"(cargo={createdExplicit?.Cargo ?? "(none)"})");
+            if (!explicitOk)
+            {
+                Console.WriteLine("FAIL: the explicitly chosen cargo token was rewritten");
+                failures++;
+            }
+
+            // 8) 下拉框目录必须覆盖 DLC 货物（它们在 def.scs 的显示名表里，
+            //    但不在费率表里，早期版本因此选不到）。
+            bool dlcInPicker = freight.CargoChoices.Any(c => c.Token == "cargo.halloween") &&
+                               freight.CargoChoices.Any(c => c.Token == "cargo.halloween_2a");
+            Console.WriteLine($"[cargo] DLC cargoes in the picker = {dlcInPicker} " +
+                              $"(choices={freight.CargoChoices.Count})");
+            if (!dlcInPicker)
+            {
+                Console.WriteLine("FAIL: the cargo picker is missing the DLC cargoes");
                 failures++;
             }
 
@@ -2769,8 +2803,8 @@ namespace Ets2SaveEditor.Tests
         /// <summary>
         /// 校验内置游戏数据：
         /// 城市来自 <see cref="CityCatalogue"/>（中文名、覆盖全部城市），
-        /// 货物来自 <see cref="GameNames.Cargo"/>（真实的游戏 token），
-        /// 返回的都是副本。
+        /// 货物来自 <see cref="CargoCatalogue.Tokens"/>（显示名表 + 费率表 +
+        /// 实测费率表合并出的真实游戏 token），返回的都是副本。
         /// </summary>
         private static int TestBuiltInGameData()
         {
@@ -2796,6 +2830,7 @@ namespace Ets2SaveEditor.Tests
             }
 
             // 2) 返回的必须是副本：改它不能污染全局目录。
+            //    City 本身是不可变的，所以共享元素也不会被改坏。
             cities.Clear();
             bool copyOk = CityCatalogue.Cities().Count == CityCatalogue.Count &&
                           data.Cities().Count == CityCatalogue.Count;
@@ -2807,19 +2842,18 @@ namespace Ets2SaveEditor.Tests
 
             // 3) 货物：必须是真实 token，旧的虚构 token（oil / milk …）必须消失。
             var cargoes = data.Cargoes();
+            var catalogueTokens = CargoCatalogue.Tokens.ToList();
             var gummy = cargoes.FirstOrDefault(c => c.Token == "cargo.gummy_bears");
-            bool cargoCountOk = cargoes.Count == GameNames.Cargo.Count && cargoes.Count > 300;
+            bool cargoCountOk = cargoes.Count == catalogueTokens.Count && cargoes.Count > 300;
             bool cargoTokenOk = gummy != null && gummy.Name == "Gummy Bears";
             bool noFakeOk = !cargoes.Any(c => c.Token == "oil" || c.Token == "milk" ||
                                               c.Token == "furniture" || c.Token == "machinery");
-            bool allRealOk = cargoes.All(c =>
-                c.Token.StartsWith("cargo.", StringComparison.Ordinal) ||
-                c.Token.StartsWith("cargo_obsole.", StringComparison.Ordinal));
-            Console.WriteLine($"[gamedata] cargoes={cargoes.Count} (names table {GameNames.Cargo.Count}) " +
-                              $"gummy='{gummy?.Name ?? "(null)"}'");
+            bool allRealOk = cargoes.All(c => c.Token.StartsWith("cargo.", StringComparison.Ordinal));
+            Console.WriteLine($"[gamedata] cargoes={cargoes.Count} (catalogue {catalogueTokens.Count}, " +
+                              $"names table {GameNames.Cargo.Count}) gummy='{gummy?.Name ?? "(null)"}'");
             if (!cargoCountOk)
             {
-                Console.WriteLine("FAIL: the built-in cargo list does not match the extracted cargo table");
+                Console.WriteLine("FAIL: the built-in cargo list does not match the cargo catalogue");
                 failures++;
             }
             if (!cargoTokenOk)
@@ -2852,10 +2886,30 @@ namespace Ets2SaveEditor.Tests
             // 5) 「货物」页的 ViewModel：数据已装载，筛选可用。
             var vm = new CargoViewModel();
             bool vmOk = vm.Cities.Count == CityCatalogue.Count &&
-                        vm.Cargos.Count == GameNames.Cargo.Count;
+                        vm.Cargos.Count == catalogueTokens.Count;
             if (!vmOk)
             {
                 Console.WriteLine("FAIL: the cargo view model did not load the catalogues");
+                failures++;
+            }
+
+            // 5b) 货物目录必须是「显示名表 + 费率表」的并集：
+            //     - 显示名表里有、费率表里没有的（DLC 货物 cargo.halloween 等）
+            //     - 费率表里有、显示名表里没有的（cargo.haulie 等，存档里确实在用）
+            //     两边都不能丢。
+            var cargoTokenSet = new HashSet<string>(catalogueTokens, StringComparer.OrdinalIgnoreCase);
+            bool coversNamesTable = GameNames.Cargo.Keys
+                .Where(t => !t.StartsWith("cargo_obsole.", StringComparison.OrdinalIgnoreCase))
+                .All(t => cargoTokenSet.Contains(t));
+            bool coversRateTable = CargoCatalogue.RateOf("cargo.haulie") > 0 &&
+                                   cargoTokenSet.Contains("cargo.haulie") &&
+                                   cargoTokenSet.Contains("cargo.halloween");
+            bool noObsolete = !catalogueTokens.Any(t => t.StartsWith("cargo_obsole.", StringComparison.OrdinalIgnoreCase));
+            Console.WriteLine($"[gamedata] cargo catalogue covers names-table={coversNamesTable} " +
+                              $"rate-table={coversRateTable} no-obsolete={noObsolete}");
+            if (!coversNamesTable || !coversRateTable || !noObsolete)
+            {
+                Console.WriteLine("FAIL: the cargo catalogue does not cover every source table");
                 failures++;
             }
 

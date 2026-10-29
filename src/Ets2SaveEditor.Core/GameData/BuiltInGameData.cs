@@ -7,9 +7,10 @@ namespace Ets2SaveEditor.Core.GameData
     /// <summary>
     /// Built-in game data, backed by the authoritative catalogues.
     /// <para>
-    /// 城市来自 <see cref="CityCatalogue"/>（从真实存档提取的 355 个城市，
-    /// 中文名）；货物来自 <see cref="GameNames.Cargo"/>（从游戏数据文件
-    /// <c>def.scs</c> 提取的 397 项，token 是真实的游戏 token）；货运公司来自
+    /// 城市来自 <see cref="CityCatalogue"/>（从真实存档提取的 334 个城市，
+    /// 中文名）；货物来自 <see cref="CargoCatalogue.Tokens"/>（游戏数据文件
+    /// 提取的显示名表 + 费率表 + 实测费率表合并而成，token 是真实的游戏
+    /// token，如 <c>cargo.gummy_bears</c>）；货运公司来自
     /// <see cref="GameNames.Company"/>。
     /// </para>
     /// <para>
@@ -30,7 +31,7 @@ namespace Ets2SaveEditor.Core.GameData
         public List<Cargo> Cargoes()
         {
             var list = new List<Cargo>();
-            foreach (string token in GameNames.Cargo.Keys)
+            foreach (string token in CargoCatalogue.Tokens)
             {
                 list.Add(new Cargo(token, CargoCatalogue.DisplayName(token)));
             }

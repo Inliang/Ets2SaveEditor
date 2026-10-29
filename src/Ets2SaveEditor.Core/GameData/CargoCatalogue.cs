@@ -412,6 +412,51 @@ namespace Ets2SaveEditor.Core.GameData
         public static int Count => Rates.Count;
 
         /// <summary>
+        /// All cargo tokens the game knows about.
+        /// <para>
+        /// 三个来源合并：游戏数据文件（def.scs）提取的显示名表
+        /// （<see cref="GameNames.Cargo"/>）、费率表，以及从真实存档实测出来的
+        /// 费率表。后两者含有显示名表里没收录、但游戏确实在用的 token
+        /// （例如 <c>cargo.haulie</c>、<c>cargo.halloween</c>）。
+        /// </para>
+        /// <para>
+        /// 显示名表里的 <c>cargo_obsole.*</c> 是游戏自己标注的**旧名**（同一个
+        /// 货物的新 token 也在表里，例如 <c>cargo.x_amail</c>），不计入，否则
+        /// 下拉框里会出现两个同名的「Christmas Assorted Mail」。
+        /// </para>
+        /// </summary>
+        public static IEnumerable<string> Tokens => AllTokenList.Value;
+
+        /// <summary>货物 token 全集（懒加载）。</summary>
+        private static readonly Lazy<List<string>> AllTokenList =
+            new Lazy<List<string>>(BuildAllTokens);
+
+        /// <summary>合并三个来源，得到货物 token 全集。</summary>
+        private static List<string> BuildAllTokens()
+        {
+            var result = new List<string>();
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (string token in GameNames.Cargo.Keys)
+            {
+                if (token.StartsWith("cargo_obsole.", StringComparison.OrdinalIgnoreCase)) continue;
+                if (seen.Add(token)) result.Add(token);
+            }
+
+            foreach (string token in Rates.Keys)
+            {
+                if (seen.Add(token)) result.Add(token);
+            }
+
+            foreach (string token in MeasuredRates.Keys)
+            {
+                if (seen.Add(token)) result.Add(token);
+            }
+
+            return result;
+        }
+
+        /// <summary>
         /// Returns the income rate of the given cargo token
         /// (euros per unit per kilometre).
         /// <para>
@@ -468,8 +513,5 @@ namespace Ets2SaveEditor.Core.GameData
             if (dot >= 0 && dot < name.Length - 1) name = name.Substring(dot + 1);
             return name.Replace('_', ' ');
         }
-
-        /// <summary>All cargo tokens of the catalogue.</summary>
-        public static IEnumerable<string> Tokens => Rates.Keys;
     }
 }

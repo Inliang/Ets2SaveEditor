@@ -82,9 +82,9 @@
 | `src/Ets2SaveEditor.Core/Domain/SaveFile.cs` | 聚合单一存档：Path / Format / LoadedFormat / LastBackupPath / Document / IsLoaded；`Load()` / `Save()`（**原子写入**；加密源文件强制备份）；暴露 `GetBank()` / `GetPlayer()` / `GetGarages()` 等类型化入口 |
 | `src/Ets2SaveEditor.Core/Persistence/SaveLocationFinder.cs` | 枚举本地（`文档/Euro Truck Simulator 2/...`）与 Steam（`userdata/<uid>/227300/remote/...`）存档路径，返回 `SaveSlot` 列表 |
 | `src/Ets2SaveEditor.Core/Persistence/BackupService.cs` | 保存前备份（`Backup(path)`），生成 `.bak.<yyyyMMddHHmmssfff>`（毫秒精度 + 序号后缀，**绝不覆盖已有备份**） |
-| `src/Ets2SaveEditor.Core/GameData/GameDataModel.cs` | 静态实体 `City` / `Cargo` / `Company` |
+| `src/Ets2SaveEditor.Core/GameData/GameDataModel.cs` | 静态实体 `City`（**不可变**，全局目录共享安全）/ `Cargo` / `Company` |
 | `src/Ets2SaveEditor.Core/GameData/IGameDataProvider.cs` | 游戏数据提供器接口 |
-| `src/Ets2SaveEditor.Core/GameData/BuiltInGameData.cs` | 游戏静态数据的统一入口：**直接委托** `CityCatalogue`（334 个中文城市）、`GameNames.Cargo`（397 项真实货物 token）、`GameNames.Company`（138 家货运公司），不再维护第二份手写清单 |
+| `src/Ets2SaveEditor.Core/GameData/BuiltInGameData.cs` | 游戏静态数据的统一入口：**直接委托** `CityCatalogue`（334 个中文城市）、`CargoCatalogue.Tokens`（366 个真实货物 token = 显示名表 + 费率表 + 实测费率表的并集）、`GameNames.Company`（138 家货运公司），不再维护第二份手写清单 |
 
 ### 2.3 `Ets2SaveEditor`（WPF 应用）
 

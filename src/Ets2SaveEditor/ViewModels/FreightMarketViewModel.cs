@@ -430,25 +430,20 @@ namespace Ets2SaveEditor.ViewModels
         }
 
         /// <summary>
-        /// 把货物 token 归一化：空值或货物目录里没有的 token 一律回落到默认
-        /// 货物，避免把无效的 cargo 引用写进存档（游戏读不懂这种引用）。
+        /// 把货物 token 归一化。
+        /// <para>
+        /// 只有**空值**才回落到默认货物：用户明确指定的 token 必须原样写进
+        /// 存档，不能因为「它不在下拉框里」就悄悄换成别的货 —— 那会让存档里
+        /// 出现与用户意图不符的货物。
+        /// </para>
         /// </summary>
-        /// <param name="token">货物 token（可能为空或无效）。</param>
-        /// <returns>货物目录里一定存在的 token。</returns>
+        /// <param name="token">货物 token（可能为空）。</param>
+        /// <returns>要写进存档的货物 token。</returns>
         private string ResolveCargoToken(string token)
         {
             string trimmed = (token ?? string.Empty).Trim();
             if (trimmed.Length == 0) return DefaultCargo;
-
-            foreach (var choice in CargoChoices)
-            {
-                if (string.Equals(choice.Token, trimmed, StringComparison.OrdinalIgnoreCase))
-                {
-                    return choice.Token;
-                }
-            }
-
-            return DefaultCargo;
+            return trimmed;
         }
 
         /// <summary>
