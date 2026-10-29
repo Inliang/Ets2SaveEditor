@@ -6,20 +6,40 @@
              mc:Ignorable="d" d:DesignHeight="420" d:DesignWidth="600">
     <Border Style="{StaticResource CardStyle}">
         <DockPanel>
-            <TextBlock DockPanel.Dock="Top" Text="城市 / 货物参考（内置数据仅供查看；货运市场任务请到“货运市场”页签编辑）" FontWeight="Bold" Margin="0,0,0,8" TextWrapping="Wrap"/>
+            <TextBlock DockPanel.Dock="Top"
+                       Text="城市 / 货物参考（目录来自游戏数据文件与真实存档；货运市场任务请到“货运市场”页签编辑）"
+                       FontWeight="Bold" Margin="0,0,0,8" TextWrapping="Wrap"/>
             <Grid>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="*"/>
                 </Grid.ColumnDefinitions>
-                <GroupBox Grid.Column="0" Header="城市（内置）" Margin="0,0,4,0">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
+
+                <!-- 筛选行：城市与货物各有几百条，需要能按名字 / token 过滤 -->
+                <StackPanel Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="3"
+                            Orientation="Horizontal" Margin="0,0,0,8">
+                    <TextBlock Text="城市" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                    <TextBox Text="{Binding CityFilter, UpdateSourceTrigger=PropertyChanged}"
+                             Width="170" Margin="0,0,18,0"
+                             ToolTip="按中文名或 token 筛选城市"/>
+                    <TextBlock Text="货物" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                    <TextBox Text="{Binding CargoFilter, UpdateSourceTrigger=PropertyChanged}"
+                             Width="170"
+                             ToolTip="按名称或 token 筛选货物"/>
+                </StackPanel>
+
+                <GroupBox Grid.Row="1" Grid.Column="0" Header="城市（游戏目录）" Margin="0,0,4,0">
                     <ListBox ItemsSource="{Binding Cities}" DisplayMemberPath="Name"/>
                 </GroupBox>
-                <GroupBox Grid.Column="1" Header="货物（内置）" Margin="0,0,4,0">
+                <GroupBox Grid.Row="1" Grid.Column="1" Header="货物（游戏目录）" Margin="0,0,4,0">
                     <ListBox ItemsSource="{Binding Cargos}" DisplayMemberPath="Name"/>
                 </GroupBox>
-                <GroupBox Grid.Column="2" Header="已访问城市（来自存档）">
+                <GroupBox Grid.Row="1" Grid.Column="2" Header="已访问城市（来自存档）">
                     <ListBox ItemsSource="{Binding VisitedCities}"/>
                 </GroupBox>
             </Grid>

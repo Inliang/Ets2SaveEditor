@@ -273,9 +273,9 @@ namespace Ets2SaveEditor.Core.Domain.TypedUnits
             if (unit == null) return result;
             foreach (var item in unit.GetArrayItems(attribute))
             {
-                string id = item.AsId();
+                // AsReferenceId 会跳过 "null" 空位占位符（存档里的空引用）。
+                string id = item.AsReferenceId();
                 if (string.IsNullOrEmpty(id)) continue;
-                if (string.Equals(id, "null", System.StringComparison.OrdinalIgnoreCase)) continue;
                 result.Add(id);
             }
             return result;

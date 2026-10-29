@@ -51,18 +51,8 @@ namespace Ets2SaveEditor.Core.Domain.TypedUnits
                 _garageId = string.Empty;
                 if (_document == null || _unit == null) return _garageId;
 
-                string id = _unit.Id;
-                foreach (var garage in _document.GetUnitsByType(Constants.GarageType))
-                {
-                    foreach (var item in garage.GetArrayItems("trailers"))
-                    {
-                        if (string.Equals(item.AsId(), id, System.StringComparison.Ordinal))
-                        {
-                            _garageId = garage.Id;
-                            return _garageId;
-                        }
-                    }
-                }
+                // 文档按「挂车 id → 车库 id」建了反向索引，查询是 O(1)。
+                _garageId = _document.FindGarageOwner(_unit.Id);
                 return _garageId;
             }
         }
@@ -73,9 +63,20 @@ namespace Ets2SaveEditor.Core.Domain.TypedUnits
         public bool IsInGarage => !string.IsNullOrEmpty(GarageId);
 
         /// <summary>Definition of the trailer (e.g. <c>trailer_def.scs.box.single_3.dryvan</c>).</summary>
+        /// <para>
+        /// 引用既可能是裸 token（<c>trailer_def.xxx</c>），也可能被引号包起来；
+        /// 两种都要认。存档里的空引用（字面量 <c>null</c>）当成「没有定义」。
+        /// </para>
+        /// </summary>
         public string Definition
         {
-            get { return _unit != null ? _unit.GetReference("trailer_definition") : string.Empty; }
+            get
+            {
+                if (_unit == null) return string.Empty;
+                var attribute = _unit.GetAttribute("trailer_definition");
+                if (attribute == null) return string.Empty;
+                return attribute.Value.AsReferenceId();
+            }
         }
 
         /// <summary>
@@ -86,32 +87,54 @@ namespace Ets2SaveEditor.Core.Domain.TypedUnits
         /// (<c>trailer_def.scs.gooseneck.singl_3e_40.container</c>). The
         /// meaningful part of that path is turned into a readable name.
         /// </para>
+        /// <para>
+        /// DLC 挂车（如 <c>trailer_def.halloween_1.scs_dryhal26</c>）在存档里
+        /// 没有对应的 <c>trailer_def</c> 单元，取不到 <c>source_name</c>；
+        /// 这时退回用挂车定义本身拼一个可读名称，绝不留下空白。
+        /// </para>
         /// </summary>
         public string ModelName
         {
             get
             {
+                // 1) 首选：游戏数据里的 source_name。
                 string source = SourceName;
-                if (string.IsNullOrEmpty(source)) return string.Empty;
+                if (!string.IsNullOrEmpty(source)) return ParseSourceName(source);
 
-                // trailer_def.scs.<shape>.<variant>.<body> -> "Gooseneck Container"
-                string[] parts = source.Split('.');
-                if (parts.Length < 3) return source;
+                // 2) 降级：存档里没有 trailer_def 单元（DLC 挂车必然走这里），
+                //    用挂车定义本身（trailer_def.xxx）整理成可读形式。
+                string definition = Definition;
+                if (!string.IsNullOrEmpty(definition)) return ParseDefinitionName(definition);
 
-                string body = parts[parts.Length - 1];
-                string shape = parts.Length >= 4 ? parts[parts.Length - 3] : string.Empty;
-                string variant = parts.Length >= 5 ? parts[parts.Length - 4] : string.Empty;
-
-                // 去掉厂商前缀 "scs"（游戏自制的挂车都带这个前缀，读起来多余）。
-                string title = Titleize(shape);
-                if (title == "scs") title = string.Empty;
-
-                string prefix = string.Empty;
-                if (!string.IsNullOrEmpty(variant) && variant != "scs") prefix = Titleize(variant);
-
-                return string.Join(" ", new[] { prefix, title, Titleize(body) })
-                    .Trim();
+                // 3) 连定义都没有（存档里异常的空引用）：至少给出单元 id，别留空白。
+                return _unit != null ? _unit.Id : string.Empty;
             }
+        }
+
+        /// <summary>
+        /// Turns the game's resource path into a readable name:
+        /// <c>trailer_def.scs.gooseneck.singl_3e_40.container</c> becomes
+        /// <c>Gooseneck Container</c>.
+        /// </summary>
+        private static string ParseSourceName(string source)
+        {
+            // trailer_def.scs.<shape>.<variant>.<body> -> "Gooseneck Container"
+            string[] parts = source.Split('.');
+            if (parts.Length < 3) return source;
+
+            string body = parts[parts.Length - 1];
+            string shape = parts.Length >= 4 ? parts[parts.Length - 3] : string.Empty;
+            string variant = parts.Length >= 5 ? parts[parts.Length - 4] : string.Empty;
+
+            // 去掉厂商前缀 "scs"（游戏自制的挂车都带这个前缀，读起来多余）。
+            string title = Titleize(shape);
+            if (title == "scs") title = string.Empty;
+
+            string prefix = string.Empty;
+            if (!string.IsNullOrEmpty(variant) && variant != "scs") prefix = Titleize(variant);
+
+            return string.Join(" ", new[] { prefix, title, Titleize(body) })
+                .Trim();
         }
 
         /// <summary>
@@ -123,7 +146,7 @@ namespace Ets2SaveEditor.Core.Domain.TypedUnits
             get
             {
                 if (_unit == null) return string.Empty;
-                string id = _unit.GetReference("trailer_definition");
+                string id = Definition;
                 if (string.IsNullOrEmpty(id)) return string.Empty;
 
                 // 存档里没有 trailer_def 单元时（如只有引用的场景），退回标识本身。
@@ -131,6 +154,40 @@ namespace Ets2SaveEditor.Core.Domain.TypedUnits
                 if (unit == null) return string.Empty;
                 return unit.GetString("source_name");
             }
+        }
+
+        /// <summary>
+        /// Turns a trailer definition into a readable name when the referenced
+        /// <c>trailer_def</c> unit is missing from the save.
+        /// <para>
+        /// <c>trailer_def.halloween_1.scs_dryhal26</c> becomes
+        /// <c>Halloween 1 Scs Dryhal26</c>. Definitions that are not
+        /// <c>trailer_def.*</c> tokens (e.g. the nameless id of a dangling
+        /// reference) are returned unchanged — showing the raw id is still
+        /// better than an empty cell.
+        /// </para>
+        /// </summary>
+        private static string ParseDefinitionName(string definition)
+        {
+            const string prefix = "trailer_def.";
+            if (!definition.StartsWith(prefix, System.StringComparison.OrdinalIgnoreCase))
+            {
+                return definition;
+            }
+
+            var words = new List<string>();
+            foreach (string part in definition.Substring(prefix.Length).Split('.'))
+            {
+                string word = Titleize(part);
+                if (word.Length == 0) continue;
+
+                // 单独的 "scs" 是厂商前缀，读起来多余。
+                if (word == "scs" && words.Count == 0) continue;
+                words.Add(word);
+            }
+
+            if (words.Count == 0) return definition;
+            return string.Join(" ", words);
         }
 
         private static string Titleize(string token)

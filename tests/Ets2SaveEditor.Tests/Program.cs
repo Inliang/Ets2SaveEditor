@@ -82,6 +82,8 @@ namespace Ets2SaveEditor.Tests
             failures += TestDocumentIndex();
             failures += TestCompanyFilter();
             failures += TestCargoSelection();
+            failures += TestTrailerModelName();
+            failures += TestBuiltInGameData();
             failures += TestNullReference();
             failures += TestRealSave();
 
@@ -2027,6 +2029,7 @@ namespace Ets2SaveEditor.Tests
 
             return failures;
         }
+
         // ------------------------------------------------------------------
         // 文档查找索引测试。
         //
@@ -2616,5 +2619,285 @@ namespace Ets2SaveEditor.Tests
             " target: \"stokes.erfurt\"\n cargo: cargo.gummy_bears\n company_truck: daf_xg\n" +
             " urgency: 0\n units_count: 1\n fill_ratio: 1\n shortest_distance_km: 200\n}\n" +
             "}\n";
+
+        // ------------------------------------------------------------------
+        // 挂车型号：缺少 trailer_def 单元时的降级显示。
+        // ------------------------------------------------------------------
+
+        /// <summary>
+        /// 校验挂车「型号」的降级链：
+        /// 有 trailer_def 单元 → 用它的 source_name；没有（DLC 挂车必然如此）
+        /// → 用挂车定义本身拼一个可读名称；两样都没有 → 至少显示定义原值，
+        /// 绝不能留下空白。
+        /// </summary>
+        private static int TestTrailerModelName()
+        {
+            int failures = 0;
+
+            string sample =
+                "SiiNunit\n{\n" +
+                "trailer_def : _nameless.def1 {\n" +
+                " source_name: trailer_def.scs.gooseneck.singl_3e_40.container\n}\n" +
+                "trailer : _nameless.t1 {\n trailer_definition: _nameless.def1\n}\n" +
+                "trailer : _nameless.t2 {\n trailer_definition: trailer_def.halloween_1.scs_dryhal26\n}\n" +
+                "trailer : _nameless.t3 {\n trailer_definition: _nameless.missing\n}\n" +
+                "trailer : _nameless.t4 {\n trailer_definition: null\n}\n" +
+                "trailer : _nameless.t5 {\n}\n" +
+                "}\n";
+
+            SiiDocument doc = SiiParser.Parse(sample);
+
+            // 1) 有 trailer_def 单元：走 source_name。
+            var withDef = new Trailer(doc.GetUnitById("_nameless.t1"), doc);
+            bool withDefOk = withDef.ModelName == "Gooseneck Container";
+            Console.WriteLine($"[trailer] with trailer_def unit -> '{withDef.ModelName}' (expect Gooseneck Container)");
+            if (!withDefOk)
+            {
+                Console.WriteLine("FAIL: trailer model name from source_name is wrong: " + withDef.ModelName);
+                failures++;
+            }
+
+            // 2) DLC 挂车：存档里没有 trailer_def 单元，必须降级成可读名称。
+            //    断言「非空」+「含可读片段」+「不是原始 token」，任何一种降级
+            //    链被改断都会立刻失败。
+            var dlc = new Trailer(doc.GetUnitById("_nameless.t2"), doc);
+            bool dlcOk = dlc.ModelName == "Halloween 1 Scs Dryhal26";
+            bool dlcReadable = !string.IsNullOrWhiteSpace(dlc.ModelName) &&
+                               dlc.ModelName.IndexOf("Halloween", StringComparison.OrdinalIgnoreCase) >= 0 &&
+                               dlc.ModelName.IndexOf('_') < 0;
+            Console.WriteLine($"[trailer] DLC trailer -> '{dlc.ModelName}' (expect Halloween 1 Scs Dryhal26)");
+            if (!dlcOk || !dlcReadable)
+            {
+                Console.WriteLine("FAIL: DLC trailer model name fallback is wrong: " + dlc.ModelName);
+                failures++;
+            }
+
+            // 2b) 用一个「引用了不存在的 trailer_def 单元」的挂车单元单独验证：
+            //     这是 DLC 挂车在存档里的真实形态，必须得到可读名称而不是空串。
+            var dlcUnit = new SiiUnit("trailer", "_nameless.dlc");
+            dlcUnit.SetScalar("trailer_definition", "trailer_def.halloween_1.scs_dryhal26");
+            var dlcOnly = new Trailer(dlcUnit, doc);
+            bool dlcOnlyOk = !string.IsNullOrWhiteSpace(dlcOnly.ModelName) &&
+                             dlcOnly.ModelName.IndexOf("Halloween", StringComparison.OrdinalIgnoreCase) >= 0 &&
+                             dlcOnly.SourceName.Length == 0;   // SourceName 语义不变：空就是空
+            Console.WriteLine($"[trailer] missing trailer_def unit -> '{dlcOnly.ModelName}' " +
+                              $"(source='{dlcOnly.SourceName}')");
+            if (!dlcOnlyOk)
+            {
+                Console.WriteLine("FAIL: a trailer referencing a missing trailer_def unit has no readable model name");
+                failures++;
+            }
+
+            // 3) 悬空引用：至少显示定义原值，不能是空串。
+            var dangling = new Trailer(doc.GetUnitById("_nameless.t3"), doc);
+            bool danglingOk = !string.IsNullOrEmpty(dangling.ModelName) &&
+                              dangling.ModelName == dangling.Definition;
+            Console.WriteLine($"[trailer] dangling reference -> '{dangling.ModelName}' (expect the raw definition)");
+            if (!danglingOk)
+            {
+                Console.WriteLine("FAIL: a dangling trailer reference produced an empty model name");
+                failures++;
+            }
+
+            // 4) 连定义都没有：至少给出单元 id，绝不留空白。
+            var noDefinition = new Trailer(doc.GetUnitById("_nameless.t4"), doc);
+            var noAttribute = new Trailer(doc.GetUnitById("_nameless.t5"), doc);
+            bool noDefinitionOk = noDefinition.Definition == string.Empty &&
+                                  noDefinition.ModelName == "_nameless.t4" &&
+                                  noAttribute.ModelName == "_nameless.t5";
+            Console.WriteLine($"[trailer] without definition -> '{noDefinition.ModelName}' / " +
+                              $"'{noAttribute.ModelName}' (expect the unit ids)");
+            if (!noDefinitionOk)
+            {
+                Console.WriteLine("FAIL: a trailer without a definition produced an empty model name");
+                failures++;
+            }
+
+            // 5) 真实存档：每一辆挂车的型号都必须有内容。
+            if (!File.Exists(RealSavePath))
+            {
+                Console.WriteLine("[trailer] SKIP: real save not found");
+                return failures;
+            }
+
+            string dir = CreateTempDir("trailer");
+            string copy = Path.Combine(dir, "trailer_copy.sii");
+            File.Copy(RealSavePath, copy, true);   // 只操作副本
+
+            var sf = new SaveFile();
+            sf.Load(copy);
+
+            int blank = 0;
+            int fallback = 0;
+            int rawToken = 0;
+            foreach (var trailer in sf.GetTrailers())
+            {
+                if (string.IsNullOrEmpty(trailer.ModelName)) blank++;
+                if (string.IsNullOrEmpty(trailer.SourceName)) fallback++;
+
+                // 型号必须是整理过的可读名称，不能直接把原始 token 甩给用户。
+                if (trailer.ModelName.IndexOf('_') >= 0 || trailer.ModelName.IndexOf('.') >= 0) rawToken++;
+            }
+
+            Console.WriteLine($"[trailer] real save: trailers={sf.GetTrailers().Count} blank={blank} " +
+                              $"without-trailer_def={fallback} raw-token={rawToken}");
+            if (rawToken != 0)
+            {
+                Console.WriteLine("FAIL: " + rawToken + " trailer(s) still show a raw token instead of a readable name");
+                failures++;
+            }
+            if (blank != 0)
+            {
+                Console.WriteLine("FAIL: " + blank + " trailer(s) still show an empty model name");
+                failures++;
+            }
+
+            // 存档里没有 trailer_def 单元的挂车（DLC 挂车）必须走降级路径。
+            if (fallback == 0)
+            {
+                Console.WriteLine("FAIL: the real save should contain a DLC trailer without trailer_def unit");
+                failures++;
+            }
+
+            return failures;
+        }
+
+        // ------------------------------------------------------------------
+        // 内置游戏数据：城市与货物必须来自权威数据源。
+        // ------------------------------------------------------------------
+
+        /// <summary>
+        /// 校验内置游戏数据：
+        /// 城市来自 <see cref="CityCatalogue"/>（中文名、覆盖全部城市），
+        /// 货物来自 <see cref="GameNames.Cargo"/>（真实的游戏 token），
+        /// 返回的都是副本。
+        /// </summary>
+        private static int TestBuiltInGameData()
+        {
+            int failures = 0;
+            var data = new BuiltInGameData();
+
+            // 1) 城市：数量与目录一致，名称是中文。
+            var cities = data.Cities();
+            bool cityCountOk = cities.Count == CityCatalogue.Count && cities.Count > 300;
+            var london = cities.FirstOrDefault(c => c.Token == "london");
+            bool cityNameOk = london != null && london.Name == "伦敦";
+            Console.WriteLine($"[gamedata] cities={cities.Count} (catalogue {CityCatalogue.Count}) " +
+                              $"london='{london?.Name ?? "(null)"}'");
+            if (!cityCountOk)
+            {
+                Console.WriteLine("FAIL: the built-in city list does not match the city catalogue");
+                failures++;
+            }
+            if (!cityNameOk)
+            {
+                Console.WriteLine("FAIL: the built-in city list is not using the Chinese names");
+                failures++;
+            }
+
+            // 2) 返回的必须是副本：改它不能污染全局目录。
+            cities.Clear();
+            bool copyOk = CityCatalogue.Cities().Count == CityCatalogue.Count &&
+                          data.Cities().Count == CityCatalogue.Count;
+            if (!copyOk)
+            {
+                Console.WriteLine("FAIL: the built-in city list exposes the catalogue's internal list");
+                failures++;
+            }
+
+            // 3) 货物：必须是真实 token，旧的虚构 token（oil / milk …）必须消失。
+            var cargoes = data.Cargoes();
+            var gummy = cargoes.FirstOrDefault(c => c.Token == "cargo.gummy_bears");
+            bool cargoCountOk = cargoes.Count == GameNames.Cargo.Count && cargoes.Count > 300;
+            bool cargoTokenOk = gummy != null && gummy.Name == "Gummy Bears";
+            bool noFakeOk = !cargoes.Any(c => c.Token == "oil" || c.Token == "milk" ||
+                                              c.Token == "furniture" || c.Token == "machinery");
+            bool allRealOk = cargoes.All(c =>
+                c.Token.StartsWith("cargo.", StringComparison.Ordinal) ||
+                c.Token.StartsWith("cargo_obsole.", StringComparison.Ordinal));
+            Console.WriteLine($"[gamedata] cargoes={cargoes.Count} (names table {GameNames.Cargo.Count}) " +
+                              $"gummy='{gummy?.Name ?? "(null)"}'");
+            if (!cargoCountOk)
+            {
+                Console.WriteLine("FAIL: the built-in cargo list does not match the extracted cargo table");
+                failures++;
+            }
+            if (!cargoTokenOk)
+            {
+                Console.WriteLine("FAIL: the built-in cargo list does not use the real game tokens");
+                failures++;
+            }
+            if (!noFakeOk)
+            {
+                Console.WriteLine("FAIL: the built-in cargo list still contains the fictional tokens");
+                failures++;
+            }
+            if (!allRealOk)
+            {
+                Console.WriteLine("FAIL: the built-in cargo list contains tokens the game does not know");
+                failures++;
+            }
+
+            // 4) 货运公司：来自公司显示名表。
+            var companies = data.Companies();
+            bool companyOk = companies.Count > 100 &&
+                             companies.Any(c => c.Token == "company.permanent.nbfc" && c.Name == "NBFC");
+            Console.WriteLine($"[gamedata] companies={companies.Count}");
+            if (!companyOk)
+            {
+                Console.WriteLine("FAIL: the built-in company list does not use the extracted company names");
+                failures++;
+            }
+
+            // 5) 「货物」页的 ViewModel：数据已装载，筛选可用。
+            var vm = new CargoViewModel();
+            bool vmOk = vm.Cities.Count == CityCatalogue.Count &&
+                        vm.Cargos.Count == GameNames.Cargo.Count;
+            if (!vmOk)
+            {
+                Console.WriteLine("FAIL: the cargo view model did not load the catalogues");
+                failures++;
+            }
+
+            vm.CityFilter = "伦敦";
+            bool cityFilterOk = vm.Cities.Count == 1 && vm.Cities[0].Token == "london";
+            vm.CityFilter = "";
+            vm.CargoFilter = "Gummy";
+            bool cargoFilterOk = vm.Cargos.Count == 1 && vm.Cargos[0].Token == "cargo.gummy_bears";
+            vm.CargoFilter = "cargo.gummy";
+            bool tokenFilterOk = vm.Cargos.Count >= 1 &&
+                                 vm.Cargos.All(c => c.Token.IndexOf("cargo.gummy", StringComparison.OrdinalIgnoreCase) >= 0);
+            vm.CargoFilter = "";
+            Console.WriteLine($"[gamedata] filters: city={cityFilterOk} cargo={cargoFilterOk} token={tokenFilterOk}");
+            if (!cityFilterOk || !cargoFilterOk || !tokenFilterOk)
+            {
+                Console.WriteLine("FAIL: the cargo view model filters do not work");
+                failures++;
+            }
+
+            // 6) 已访问城市显示中文名 + token。
+            if (File.Exists(RealSavePath))
+            {
+                string dir = CreateTempDir("gamedata");
+                string copy = Path.Combine(dir, "gamedata_copy.sii");
+                File.Copy(RealSavePath, copy, true);   // 只操作副本
+
+                var sf = new SaveFile();
+                sf.Load(copy);
+                vm.LoadFrom(sf);
+
+                bool visitedOk = vm.VisitedCities.Count > 0 &&
+                                 vm.VisitedCities.All(v => v.Contains("(") && v.Contains(")"));
+                Console.WriteLine($"[gamedata] visited cities={vm.VisitedCities.Count} " +
+                                  $"sample='{vm.VisitedCities.FirstOrDefault() ?? "(none)"}'");
+                if (!visitedOk)
+                {
+                    Console.WriteLine("FAIL: visited cities are not shown with their readable name");
+                    failures++;
+                }
+            }
+
+            return failures;
+        }
     }
 }

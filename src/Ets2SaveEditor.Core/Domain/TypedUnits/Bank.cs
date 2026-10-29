@@ -91,7 +91,7 @@ namespace Ets2SaveEditor.Core.Domain.TypedUnits
                 long total = 0;
                 foreach (var item in _unit.GetArrayItems(Constants.BankLoansAttribute))
                 {
-                    string id = item.AsId();
+                    string id = item.AsReferenceId();
                     if (string.IsNullOrEmpty(id)) continue;
                     var loanUnit = _doc.GetUnitById(id);
                     if (loanUnit != null) total += loanUnit.GetLong("amount");

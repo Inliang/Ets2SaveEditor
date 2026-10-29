@@ -65,7 +65,7 @@
 | `src/Ets2SaveEditor.Core/Sii/Model/SiiValueExtensions.cs` | 值读取辅助扩展：`AsId` / `AsDouble` / `AsLong` / `IsHexFloat` |
 | `src/Ets2SaveEditor.Core/Sii/Model/SiiAttribute.cs` | 通用属性（Name / Value / IsArray / Order / RawText 透传原文） |
 | `src/Ets2SaveEditor.Core/Sii/Model/SiiUnit.cs` | 通用 unit（Type / Id / 有序 Attributes，Get/Set/GetOrCreate 方法，数组读写辅助） |
-| `src/Ets2SaveEditor.Core/Sii/Model/SiiDocument.cs` | 顶层文档（Header / 有序 Units，按 Id / Type 查询） |
+| `src/Ets2SaveEditor.Core/Sii/Model/SiiDocument.cs` | 顶层文档（Header / 有序 Units，按 Id / Type 查询）；**带 id / 类型 / 车库归属索引**，查询 O(1)；增删单元走 `AddUnit` / `RemoveUnit` 以同步索引 |
 | `src/Ets2SaveEditor.Core/Sii/SiiFormatDetector.cs` | 格式枚举 `SiiFormat`、首字节检测（`ScsC` / `SiiNunit` / `BSII` / zlib）、AES-256-CBC 解密、zlib 解压 |
 | `src/Ets2SaveEditor.Core/Sii/SiiBsiiDecoder.cs` | **二进制 `BSII` 解码器**：结构定义块 / 数据块、编码字符串（38 进制）、nameless id（16 位分组）、ORDINAL 查找表、PLACEMENT 偏移还原、IEEE754 十六进制浮点、**无符号类型最大值 → `nil` 哨兵** → SII 文本 |
 | `src/Ets2SaveEditor.Core/Sii/SiiParser.cs` | 明文 SII 文本 → `SiiDocument`（逐 unit / 逐 attribute 解析，数组索引、`&hex` 浮点、向量 / placement，未知结构原样保留） |
@@ -76,7 +76,7 @@
 | `src/Ets2SaveEditor.Core/Domain/TypedUnits/Player.cs` | 类型化包装（`economy` + `player`）：`Experience`（`experience_points`）/ `Level` / 技能（`LongDist` / `Heavy` / `Fragile` / `Urgent` / `EcoDriving`）/ `HqCity` / `OwnedTrucks` 等 |
 | `src/Ets2SaveEditor.Core/Domain/TypedUnits/Garage.cs` | 类型化包装（`garage`）：`Status` / `Productivity` / `City` / `Vehicles` / `Drivers` / `Trailers` 及其数量 |
 | `src/Ets2SaveEditor.Core/Domain/TypedUnits/Vehicle.cs` | 类型化包装（`vehicle`）：`EngineWear` / `ChassisWear` / `TransmissionWear` / `CabinWear` / `WheelWear` / `Fuel`（`fuel_relative`）/ `Odometer` / `LicensePlate`；`Repair()` 归零磨损，`Refuel()` 置满 |
-| `src/Ets2SaveEditor.Core/Domain/TypedUnits/Trailer.cs` | 类型化包装（`trailer`）：`BodyWear` / `ChassisWear` / `WheelWear` / `CargoDamage` / `CargoMass` / `Definition`；`Repair()` |
+| `src/Ets2SaveEditor.Core/Domain/TypedUnits/Trailer.cs` | 类型化包装（`trailer`）：`BodyWear` / `ChassisWear` / `WheelWear` / `CargoDamage` / `CargoMass` / `Definition`；`ModelName` 在缺少 `trailer_def` 单元（DLC 挂车）时降级用定义本身拼名称，绝不留空白；`Repair()` |
 | `src/Ets2SaveEditor.Core/Domain/TypedUnits/JobOffer.cs` | 类型化包装（`job_offer_data`）：`TargetCity` / `Cargo` / `Truck` / `TrailerVariant` / `Urgency` / `DistanceKm` / `UnitsCount` / `FillRatio` |
 | `src/Ets2SaveEditor.Core/Domain/TypedUnits/Economy.cs` | 类型化包装（`economy`）：`VisitedCities` / `ExperiencePoints` / `TotalDistance` / `TotalFuelLitres` / `Adr` 等 |
 | `src/Ets2SaveEditor.Core/Domain/SaveFile.cs` | 聚合单一存档：Path / Format / LoadedFormat / LastBackupPath / Document / IsLoaded；`Load()` / `Save()`（**原子写入**；加密源文件强制备份）；暴露 `GetBank()` / `GetPlayer()` / `GetGarages()` 等类型化入口 |
@@ -84,7 +84,7 @@
 | `src/Ets2SaveEditor.Core/Persistence/BackupService.cs` | 保存前备份（`Backup(path)`），生成 `.bak.<yyyyMMddHHmmssfff>`（毫秒精度 + 序号后缀，**绝不覆盖已有备份**） |
 | `src/Ets2SaveEditor.Core/GameData/GameDataModel.cs` | 静态实体 `City` / `Cargo` / `Company` |
 | `src/Ets2SaveEditor.Core/GameData/IGameDataProvider.cs` | 游戏数据提供器接口 |
-| `src/Ets2SaveEditor.Core/GameData/BuiltInGameData.cs` | 内置少量城市 / 货物 / 公司（注明待扩充） |
+| `src/Ets2SaveEditor.Core/GameData/BuiltInGameData.cs` | 游戏静态数据的统一入口：**直接委托** `CityCatalogue`（334 个中文城市）、`GameNames.Cargo`（397 项真实货物 token）、`GameNames.Company`（138 家货运公司），不再维护第二份手写清单 |
 
 ### 2.3 `Ets2SaveEditor`（WPF 应用）
 
@@ -175,6 +175,12 @@ classDiagram
         +List~SiiUnit~ Units
         +SiiUnit GetUnitById(string id)
         +List~SiiUnit~ GetUnitsByType(string type)
+        +SiiUnit GetFirstByType(string type)
+        +void AddUnit(SiiUnit unit)
+        +bool RemoveUnit(SiiUnit unit)
+        +string FindGarageOwner(string unitId)
+        +void RebuildIndex()
+        +void InvalidateIndex()
     }
     SiiDocument "1" *-- "0..*" SiiUnit : contains
     SiiUnit "1" *-- "0..*" SiiAttribute : has
@@ -546,7 +552,7 @@ graph TD
 4. **备份策略默认开关与保留数量**：默认是否开启、保留份数、命名规则（见 §7）。
 5. **数值边界与校验**：金钱 / 等级 / 技能是否对齐游戏内上限；超限策略（截断 / 警告 / 拒绝）。
 6. **Mod 数据来源（P2-5）**：创意工坊订阅目录解析优先级是否高于编队控制包（P2-3），需产品确认。
-7. **城市 / 货物 / 公司清单**：`BuiltInGameData` v1 仅内置少量（如基础 20+ 城市），需随 DLC / 版本扩充策略。
+7. **城市 / 货物 / 公司清单**：已改为直接委托权威数据源（`CityCatalogue` / `GameNames.Cargo` / `GameNames.Company`），不再有第二份手写清单；后续若要支持 Mod 自定义城市 / 货物，再在此之上叠加 Mod 数据源。
 
 ### 8.1 等级换算表的数据来源（已从游戏数据文件逆向确认）
 

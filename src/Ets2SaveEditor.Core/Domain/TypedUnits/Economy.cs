@@ -36,7 +36,7 @@ namespace Ets2SaveEditor.Core.Domain.TypedUnits
 
                 foreach (var item in _unit.GetArrayItems(Constants.EconomyVisitedCitiesAttribute))
                 {
-                    string value = item.AsId();
+                    string value = item.AsReferenceId();
                     if (!string.IsNullOrEmpty(value)) list.Add(value);
                 }
 
@@ -159,6 +159,10 @@ namespace Ets2SaveEditor.Core.Domain.TypedUnits
         }
 
         /// <summary>Identifiers of all garages of the profile.</summary>
+        /// <para>
+        /// 存档里的空引用存的是字面量 <c>null</c>，这里统一跳过。
+        /// </para>
+        /// </summary>
         public List<string> GarageIds
         {
             get
@@ -167,7 +171,9 @@ namespace Ets2SaveEditor.Core.Domain.TypedUnits
                 if (_unit == null) return list;
                 foreach (var item in _unit.GetArrayItems("garages"))
                 {
-                    list.Add(item.AsId());
+                    string id = item.AsReferenceId();
+                    if (string.IsNullOrEmpty(id)) continue;
+                    list.Add(id);
                 }
                 return list;
             }
