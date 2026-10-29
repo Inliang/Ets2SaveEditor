@@ -84,7 +84,7 @@
 | `src/Ets2SaveEditor.Core/Persistence/BackupService.cs` | 保存前备份（`Backup(path)`），生成 `.bak.<yyyyMMddHHmmssfff>`（毫秒精度 + 序号后缀，**绝不覆盖已有备份**） |
 | `src/Ets2SaveEditor.Core/GameData/GameDataModel.cs` | 静态实体 `City`（**不可变**，全局目录共享安全）/ `Cargo` / `Company` |
 | `src/Ets2SaveEditor.Core/GameData/IGameDataProvider.cs` | 游戏数据提供器接口 |
-| `src/Ets2SaveEditor.Core/GameData/BuiltInGameData.cs` | 游戏静态数据的统一入口：**直接委托** `CityCatalogue`（334 个中文城市）、`GameNames.Cargo`（489 个当前游戏真实存在的货物 token = def.scs + 全部 dlc_*.scs 的 cargo_data 合并）、`GameNames.Company`（138 家货运公司），不再维护第二份手写清单 |
+| `src/Ets2SaveEditor.Core/GameData/BuiltInGameData.cs` | 游戏静态数据的统一入口：**直接委托** `CityCatalogue`（334 个中文城市）、`CargoCatalogue.SelectableTokens`（431 个游戏实际在用的货物 token = 定义表 ∪ 费率表 ∪ 存档实测表，去掉游戏自身从不引用的 cargo_obsole.* 旧名）、`GameNames.Company`（138 家货运公司），不再维护第二份手写清单 |
 
 ### 2.3 `Ets2SaveEditor`（WPF 应用）
 
@@ -552,7 +552,7 @@ graph TD
 4. **备份策略默认开关与保留数量**：默认是否开启、保留份数、命名规则（见 §7）。
 5. **数值边界与校验**：金钱 / 等级 / 技能是否对齐游戏内上限；超限策略（截断 / 警告 / 拒绝）。
 6. **Mod 数据来源（P2-5）**：创意工坊订阅目录解析优先级是否高于编队控制包（P2-3），需产品确认。
-7. **城市 / 货物 / 公司清单**：已改为直接委托权威数据源（`CityCatalogue` / `GameNames.Cargo` / `GameNames.Company`），不再有第二份手写清单；货物显示名另有本地化兜底表 `GameNames.LocalizedCargo`（locale.scs 的 `cn_*` 键），用来覆盖 `cargo_data` 没收录、但老存档里还留着的 token；同名货物（散装/箱装/罐装）会加上 token 后缀，保证两个不同的货物不会显示成同一个名字；可选清单用 `CargoCatalogue.SelectableTokens`（去掉游戏标注的过时货物 `cargo_obsole.*`）；后续若要支持 Mod 自定义城市 / 货物，再在此之上叠加 Mod 数据源。
+7. **城市 / 货物 / 公司清单**：已改为直接委托权威数据源（`CityCatalogue` / `GameNames.Cargo` / `GameNames.Company`），不再有第二份手写清单；货物显示名另有本地化兜底表 `GameNames.LocalizedCargo`（locale.scs 的 `cn_*` 键），用来覆盖 `cargo_data` 没收录、但老存档里还留着的 token；同名货物（散装/箱装/罐装）会加上 token 后缀，保证两个不同的货物不会显示成同一个名字；可选清单用 `CargoCatalogue.SelectableTokens`（去掉游戏自身从不引用的旧名 `cargo_obsole.*`）；后续若要支持 Mod 自定义城市 / 货物，再在此之上叠加 Mod 数据源。
 
 ### 8.1 等级换算表的数据来源（已从游戏数据文件逆向确认）
 

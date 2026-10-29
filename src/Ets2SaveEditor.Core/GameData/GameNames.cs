@@ -519,15 +519,19 @@ namespace Ets2SaveEditor.Core.GameData
         /// <summary>
         /// 货物显示名的**本地化兜底表**，共 425 项。
         /// <para>
-        /// <c>def.scs</c> 的 <c>cargo_data</c> 只覆盖 397 个货物，而游戏当前用的、
-        /// 以及老存档里还留着的 token 更多（<c>cargo.driller</c>、<c>cargo.cable_reel</c>、
-        /// <c>cargo.haulie</c> …）。这些 token 在 <c>cargo_data</c> 里查不到，
-        /// 但它们的英文名仍在 <c>locale.scs</c> 的 <c>cn_*</c> 键里。
+        /// <c>def.scs</c> / <c>dlc_*.scs</c> 的 <c>cargo_data</c> 覆盖不了的
+        /// token，它们的英文名仍在 <c>locale.scs</c> 的 <c>cn_*</c> 键里。
         /// </para>
         /// <para>
         /// 键由 <c>cn_&lt;token 尾段&gt;</c> 机械转换而来（<c>cn_driller</c> →
-        /// <c>cargo.driller</c>），因此这张表里也混着一些不是货物的键（卡车、
-        /// 附件、赛事名等）—— 它只作为**显示名兜底**使用，不会进入可选清单。
+        /// <c>cargo.driller</c>），因此这张表是**查询用的键集合，不是 token
+        /// 清单**：425 项里只有 18 项是真实 token，其余是 locale.scs 的全称键
+        /// （<c>cargo.articulated_hauler_volvo_a25g</c> 之类）。
+        /// </para>
+        /// <para>
+        /// 正因为如此，它只用于**按 token 查显示名**，绝不能当成「可选货物
+        /// 清单」—— 那会把几百个伪 token 塞进下拉框。可选清单见
+        /// <see cref="CargoCatalogue.SelectableTokens"/>。
         /// </para>
         /// </summary>
         public static readonly Dictionary<string, string> LocalizedCargo =

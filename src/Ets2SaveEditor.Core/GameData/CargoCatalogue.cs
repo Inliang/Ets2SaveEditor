@@ -412,22 +412,27 @@ namespace Ets2SaveEditor.Core.GameData
         public static int Count => Rates.Count;
 
         /// <summary>
-        /// Cargo tokens that have a rate in the catalogue.
+        /// 可选货物清单：游戏实际在用的全部货物（431 项）。
         /// <para>
-        /// 三个来源合并：游戏数据文件（def.scs）提取的显示名表
+        /// 三个来源合并：游戏数据文件（def.scs + 全部 dlc_*.scs）提取的显示名表
         /// （<see cref="GameNames.Cargo"/>）、费率表，以及从真实存档实测出来的
-        /// 费率表。后两者含有显示名表里没收录、但游戏确实在用的 token
-        /// （例如 <c>cargo.haulie</c>、<c>cargo.halloween</c>）。
+        /// 费率表。
         /// </para>
         /// <para>
-        /// ⚠️ 这张表里有**当前游戏版本已不认的旧 token**（如
-        /// <c>cargo.haulie</c>、<c>cargo.cable_reel</c>），所以它只能用来查
-        /// 费率、或者给存档里残留的旧 token 兜一个显示名，**不能**当成
-        /// 「可选货物清单」—— 用户在货运市场里选货物时应当用
-        /// <see cref="GameNames.Cargo"/>。
+        /// <b>为什么不能只用 <see cref="GameNames.Cargo"/>：</b>有一部分游戏实际
+        /// 在用的货物**没有 cargo_data 定义**（可能是游戏内置，或定义在本工具
+        /// 没覆盖到的位置），例如通用货运 <c>cargo.haulie</c> —— 游戏自己的
+        /// 任务里引用了它 183 次，只能从存档实测表里拿到。只用定义表会漏掉
+        /// 33 种游戏在用的货物，玩家在货运市场里就选不到。
+        /// </para>
+        /// <para>
+        /// <b>为什么排除 <c>cargo_obsole.*</c>：</b>那是游戏自己标注的**旧名**
+        /// （游戏的改名映射表 <c>cargo_name_mapping</c> 里 73 对映射无一涉及
+        /// obsolete；存档里游戏生成的任务也从不引用它们，只有历史遗留的少数
+        /// 几种被引用过）。放进可选清单只会让用户选到游戏不会派发的货。
         /// </para>
         /// </summary>
-        public static IEnumerable<string> Tokens => AllTokenList.Value;
+        public static IEnumerable<string> SelectableTokens => AllTokenList.Value;
 
         /// <summary>
         /// 货物 token 全集（懒加载）。
@@ -435,29 +440,7 @@ namespace Ets2SaveEditor.Core.GameData
         private static readonly Lazy<List<string>> AllTokenList =
             new Lazy<List<string>>(BuildAllTokens);
 
-        /// <summary>
-        /// 可选货物清单：游戏当前版本能派发的货物（418 项）。
-        /// <para>
-        /// = <see cref="GameNames.Cargo"/> 去掉 <c>cargo_obsole.*</c>。后者是
-        /// **游戏自己标注的过时货物**（前缀就是 obsolete）：游戏自身从不派发它们
-        /// （实测存档里 5528 条游戏生成的任务没有一条引用它们），放进可选清单
-        /// 只会让用户选到游戏不会派发的货。它们仍然保留在
-        /// <see cref="GameNames.Cargo"/> 里，供查阅老存档用。
-        /// </para>
-        /// </summary>
-        public static IEnumerable<string> SelectableTokens
-        {
-            get
-            {
-                foreach (string token in GameNames.Cargo.Keys)
-                {
-                    if (token.StartsWith("cargo_obsole.", StringComparison.OrdinalIgnoreCase)) continue;
-                    yield return token;
-                }
-            }
-        }
-
-        /// <summary>合并三个来源，得到货物 token 全集。</summary>
+        /// <summary>合并三个来源，得到可选货物清单。</summary>
         private static List<string> BuildAllTokens()
         {
             var result = new List<string>();
@@ -465,8 +448,7 @@ namespace Ets2SaveEditor.Core.GameData
 
             foreach (string token in GameNames.Cargo.Keys)
             {
-                // 游戏自己标注的过时货物（cargo_obsole.*）游戏从不派发，
-                // 费率表里也不需要它们。
+                // 游戏自身从不引用的旧名（cargo_obsole.*），见 SelectableTokens。
                 if (token.StartsWith("cargo_obsole.", StringComparison.OrdinalIgnoreCase)) continue;
                 if (seen.Add(token)) result.Add(token);
             }

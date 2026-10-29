@@ -2574,10 +2574,12 @@ namespace Ets2SaveEditor.Tests
                 failures++;
             }
 
-            // 9) 下拉框的清单必须是「游戏真实会派发的货物」：
+            // 9) 下拉框的清单必须是「游戏实际在用的全部货物」：
             //    - DLC 货物（万圣节、农用机械、工程车…）必须能选到
-            //    - 游戏标注的过时货物（cargo_obsole.*）不能选 —— 游戏从不派发它们
-            //    - 当前游戏已经不认的旧 token（cargo.haulie 等）不能选
+            //    - 游戏自身从不引用的旧名（cargo_obsole.*）不能选
+            //    - **没有 cargo_data 定义、但游戏在用的货物也必须能选到**
+            //      （cargo.haulie 是通用货运，游戏自己的任务引用了它 183 次，
+            //       只能从存档实测表里拿到 —— 少了它玩家就选不到最常见的货）
             var pickerTokens = new HashSet<string>(
                 freight.CargoChoices.Select(c => c.Token), StringComparer.OrdinalIgnoreCase);
             var selectable = new HashSet<string>(
@@ -2585,13 +2587,38 @@ namespace Ets2SaveEditor.Tests
             bool pickerMatches = pickerTokens.Count == selectable.Count &&
                                  selectable.All(pickerTokens.Contains);
             bool noObsolete = !pickerTokens.Any(t => t.StartsWith("cargo_obsole.", StringComparison.OrdinalIgnoreCase));
-            bool noDelisted = !pickerTokens.Contains("cargo.haulie") &&
-                              !pickerTokens.Contains("cargo.hw25c1");
+            bool hasGameUsed = pickerTokens.Contains("cargo.haulie") &&
+                               pickerTokens.Contains("cargo.haulie2") &&
+                               pickerTokens.Contains("cargo.hw25c1") &&
+                               pickerTokens.Contains("cargo.tmp_00");
             Console.WriteLine($"[cargo] picker matches selectable={pickerMatches} " +
-                              $"no-obsolete={noObsolete} no-delisted={noDelisted} (picker={pickerTokens.Count})");
-            if (!pickerMatches || !noObsolete || !noDelisted)
+                              $"no-obsolete={noObsolete} has-game-used={hasGameUsed} (picker={pickerTokens.Count})");
+            if (!pickerMatches || !noObsolete || !hasGameUsed)
             {
-                Console.WriteLine("FAIL: the cargo picker does not match the game's dispatchable cargo");
+                Console.WriteLine("FAIL: the cargo picker does not match the cargo the game actually uses");
+                failures++;
+            }
+
+            // 10) 清单里的显示名必须两两不重复（撞名的会加 token 后缀）。
+            var pickerNames = new Dictionary<string, string>(StringComparer.Ordinal);
+            int nameDup = 0;
+            foreach (var choice in freight.CargoChoices)
+            {
+                string? previous;
+                if (pickerNames.TryGetValue(choice.Name, out previous))
+                {
+                    nameDup++;
+                    Console.WriteLine($"  FAIL: '{choice.Token}' and '{previous}' both show as '{choice.Name}'");
+                }
+                else
+                {
+                    pickerNames[choice.Name] = choice.Token;
+                }
+            }
+            Console.WriteLine($"[cargo] duplicate display names in the picker = {nameDup}");
+            if (nameDup != 0)
+            {
+                Console.WriteLine("FAIL: " + nameDup + " cargo name(s) in the picker are not distinguishable");
                 failures++;
             }
 
@@ -3020,16 +3047,17 @@ namespace Ets2SaveEditor.Tests
 
             // 5) 货物目录：必须是真实 token，旧的虚构 token（oil / milk …）必须消失。
             var cargoes = data.Cargoes();
+            var selectableCount = CargoCatalogue.SelectableTokens.Count();
             var gummy = cargoes.FirstOrDefault(c => c.Token == "cargo.gummy_bears");
-            bool cargoCountOk = cargoes.Count == GameNames.Cargo.Count && cargoes.Count > 300;
+            bool cargoCountOk = cargoes.Count == selectableCount && cargoes.Count > 300;
             bool cargoTokenOk = gummy != null && gummy.Name == "Gummy Bears";
             bool noFakeOk = !cargoes.Any(c => c.Token == "oil" || c.Token == "milk" ||
                                               c.Token == "furniture" || c.Token == "machinery");
             bool allRealOk = cargoes.All(c =>
                 c.Token.StartsWith("cargo.", StringComparison.Ordinal) ||
                 c.Token.StartsWith("cargo_obsole.", StringComparison.Ordinal));
-            Console.WriteLine($"[gamedata] cargoes={cargoes.Count} (names table {GameNames.Cargo.Count}) " +
-                              $"gummy='{gummy?.Name ?? "(null)"}'");
+            Console.WriteLine($"[gamedata] cargoes={cargoes.Count} (selectable {selectableCount}, " +
+                              $"names table {GameNames.Cargo.Count}) gummy='{gummy?.Name ?? "(null)"}'");
             if (!cargoCountOk)
             {
                 Console.WriteLine("FAIL: the built-in cargo list does not match the extracted cargo table");
@@ -3065,7 +3093,7 @@ namespace Ets2SaveEditor.Tests
             // 5) 「货物」页的 ViewModel：数据已装载，筛选可用。
             var vm = new CargoViewModel();
             bool vmOk = vm.Cities.Count == CityCatalogue.Count &&
-                        vm.Cargos.Count == GameNames.Cargo.Count;
+                        vm.Cargos.Count == selectableCount;
             if (!vmOk)
             {
                 Console.WriteLine("FAIL: the cargo view model did not load the catalogues");
