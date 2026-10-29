@@ -299,7 +299,7 @@ namespace Ets2SaveEditor.ViewModels
         /// <para>
         /// 不能只用 <see cref="GameNames.Cargo"/>（游戏数据表）：有一部分游戏实际
         /// 在用的货物**没有 cargo_data 定义**（通用货运 <c>cargo.haulie</c> 就是，
-        /// 游戏自己的任务里引用了它 183 次），只用定义表会漏掉 33 种，用户在
+        /// 游戏自己的任务里引用了它 183 次），只用定义表会漏掉这批货物，用户在
         /// 货运市场里就选不到。
         /// </para>
         /// </summary>

@@ -6,6 +6,7 @@ using System.IO.Compression;
 using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.RegularExpressions;
 using Ets2SaveEditor.Core.Domain;
 using Ets2SaveEditor.Core.Domain.TypedUnits;
 using SaveCompany = Ets2SaveEditor.Core.Domain.TypedUnits.Company;
@@ -85,6 +86,7 @@ namespace Ets2SaveEditor.Tests
             failures += TestTrailerModelName();
             failures += TestBuiltInGameData();
             failures += TestCargoNames();
+            failures += TestDocNumbers();
             failures += TestNullReference();
             failures += TestRealSave();
 
@@ -2701,7 +2703,7 @@ namespace Ets2SaveEditor.Tests
             // 游戏自己生成的任务引用过的每一个货物 token，都必须能在可选清单里
             // 找到 —— 否则用户想建一个和游戏里一样的任务却选不到那种货。
             // （cargo.haulie 这类「没有 cargo_data 定义、但游戏在用」的货物
-            //   最容易漏：只用定义表做清单就会漏掉 33 种。）
+            //   最容易漏：只用定义表做清单就会漏掉它们。）
             var selectableSet = new HashSet<string>(
                 CargoCatalogue.SelectableTokens, StringComparer.OrdinalIgnoreCase);
             int notSelectable = 0;
@@ -2861,6 +2863,91 @@ namespace Ets2SaveEditor.Tests
             }
 
             return failures;
+        }
+
+        // ------------------------------------------------------------------
+        // 文档里的数量必须与代码里的实际数据一致。
+        // ------------------------------------------------------------------
+
+        /// <summary>
+        /// 校验 README / ARCHITECTURE 里写着的数量与代码实际值一致。
+        /// <para>
+        /// 背景：这一轮真实出现过两处陈旧数字 —— README 曾写着「355 个城市」
+        /// （实际 334），以及「漏掉 33 种货物」（DLC 合并把 cargo_data 从 397
+        /// 扩到 489 之后，那个数字就悄悄失效了，合并后只剩个位数）。
+        /// 它们的共同点是：**数字来自某次实测，在底层数据变化后就悄悄失效了**，
+        /// 没人重新核对。
+        /// </para>
+        /// <para>
+        /// 这里把文档里的关键数量与代码实际值绑定：期望值**不硬编码**，一律取自
+        /// 目录本身，所以以后再合并 DLC、再改表规模，文档与断言会一起对。
+        /// </para>
+        /// </summary>
+        private static int TestDocNumbers()
+        {
+            int failures = 0;
+
+            string? readme = FindRepoFile("README.md");
+            if (readme == null)
+            {
+                Console.WriteLine("[docnum] SKIP: 不在仓库内运行（找不到 README.md）");
+                return 0;
+            }
+            string readmeText = File.ReadAllText(readme);
+
+            string? arch = FindRepoFile(Path.Combine("docs", "ARCHITECTURE.md"));
+            string archText = arch == null ? string.Empty : File.ReadAllText(arch);
+
+            int selectableCount = CargoCatalogue.SelectableTokens.Count();
+
+            var claims = new (string Label, string Text, string Pattern, int Expected)[]
+            {
+                ("README 城市数", readmeText, @"城市（(\d+) 个", CityCatalogue.Count),
+                ("README 货物页目录", readmeText, @"与货物（(\d+) 种", selectableCount),
+                ("README 货物名表", readmeText, @"cargo_data`（(\d+) 项）", GameNames.Cargo.Count),
+                ("README 可选清单", readmeText, @"SelectableTokens`（(\d+) 项）", selectableCount),
+                ("README 本地化兜底", readmeText, @"cn_\*` 键，(\d+) 项）", GameNames.LocalizedCargo.Count),
+                ("ARCH 城市数", archText, @"（(\d+) 个中文城市）", CityCatalogue.Count),
+                ("ARCH 货物数", archText, @"SelectableTokens`（(\d+) 个", selectableCount),
+                ("ARCH 公司数", archText, @"（(\d+) 家货运公司）", GameNames.Company.Count),
+            };
+
+            foreach (var claim in claims)
+            {
+                var match = Regex.Match(claim.Text, claim.Pattern);
+                if (!match.Success)
+                {
+                    Console.WriteLine($"  FAIL: {claim.Label} —— 文档里找不到匹配「{claim.Pattern}」的数量表述");
+                    failures++;
+                    continue;
+                }
+
+                int stated = int.Parse(match.Groups[1].Value);
+                bool ok = stated == claim.Expected;
+                Console.WriteLine($"[docnum] {claim.Label}: 文档={stated} 实际={claim.Expected} {(ok ? "✓" : "✗")}");
+                if (!ok)
+                {
+                    Console.WriteLine("FAIL: " + claim.Label + " 与代码实际值不一致");
+                    failures++;
+                }
+            }
+
+            return failures;
+        }
+
+        /// <summary>
+        /// 从测试程序所在目录向上查找仓库里的某个文件；找不到返回 null。
+        /// </summary>
+        private static string? FindRepoFile(string relativePath)
+        {
+            var dir = new DirectoryInfo(AppContext.BaseDirectory);
+            while (dir != null)
+            {
+                string candidate = Path.Combine(dir.FullName, relativePath);
+                if (File.Exists(candidate)) return candidate;
+                dir = dir.Parent;
+            }
+            return null;
         }
 
         /// <summary>

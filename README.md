@@ -259,9 +259,9 @@ python tools/extract_names.py "<ETS2 安装目录>" game_names.json
 > 单靠 `GameNames.Cargo`（`def.scs` / `dlc_*.scs` 的 `cargo_data` 定义表）会
 > **漏掉一部分游戏实际在用的货物** —— 例如通用货运 `cargo.haulie` 就没有
 > `cargo_data` 定义（游戏自己的任务里引用了它 183 次），只能从**费率表**里拿到
-> （那张表是按真实存档实测手工维护的）；实测共 33 种这样的货物。反过来也不能
-> 只拿费率表与实测表：它们只有 368 项，缺了 `cargo_data` 里的 DLC 货物。
-> 三张表取并集才既不缺也不多。
+> （那张表是按真实存档实测手工维护的，共 360 项；有些货物**连 `cargo_data` 里都
+> 没有定义**，只能靠它兜住）。反过来也不能只拿费率表与实测表：它们缺了
+> `cargo_data` 里的 DLC 货物。三张表取并集才既不缺也不多。
 >
 > `cargo_obsole.*` 是**游戏自身从不引用的旧名**（游戏的改名映射表
 > `cargo_name_mapping` 里 73 对映射无一涉及 obsolete；存档里游戏生成的任务也
