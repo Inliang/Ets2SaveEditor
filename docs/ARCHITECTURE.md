@@ -1,7 +1,7 @@
 # Ets2SaveEditor 系统架构设计（ARCHITECTURE）
 
 > 文档版本：v0.1（架构草案）　|　作者：架构师 高见远（Gao）　|　状态：待评审
-> 适用范围：v1（明文 SII + zlib 压缩 SII；二进制 / 3NK 后置 P2）
+> 适用范围：v1（明文 SII / zlib 压缩 SII / 加密(ScsC) / 二进制(BSII) 四种格式均已支持；3NK 解析后置 P2）
 > 配套文档：`docs/PRD.md`（产品需求）、`README.md`（技术栈与目录占位）
 
 ---
@@ -15,7 +15,7 @@
 | 语言 / 运行时 | **C# / .NET 8** | LTS 长期支持、跨项目引用简单、原生 `System.IO.Compression.ZLibStream` 可直接做托管 zlib 解压，无需 P/Invoke。 |
 | 桌面框架 | **WPF（Windows）** | ETS2 主平台为 Windows；WPF 的 XAML + 数据绑定 + 标签页（TabControl）天然契合 PRD 的多功能页签布局。 |
 | 架构模式 | **MVVM（CommunityToolkit.Mvvm）** | 通过 `[ObservableProperty]` / `RelayCommand` / `AsyncRelayCommand` 源码生成器，减少样板代码；视图与逻辑解耦，便于社区贡献与单元测试。 |
-| 压缩处理 | **`System.IO.Compression.ZLibStream`** | .NET 原生托管实现，零额外依赖，可安全解压 zlib 变体 SII；加载时解压为明文、保存时写回明文（游戏加载会自动重压缩）。 |
+| 压缩处理 | **`System.IO.Compression.ZLibStream`** | .NET 原生托管实现，零额外依赖，可安全解压 zlib 变体 SII；加载时解压为明文，保存时按原格式写回（加密 `ScsC` 重新加密、zlib 重新压缩、其余明文）。 |
 | 分层 | **Core 类库 + WPF 应用** | 解析 / 领域模型 / 游戏数据与 UI 彻底解耦；Core 可被测试、可被后续 CLI / MAUI 复用。 |
 
 ### 1.2 核心架构决策：通用模型 + 类型化包装（双层 SII 模型）
@@ -25,7 +25,7 @@
 1. **通用层（无损透传）**：`SiiDocument` / `SiiUnit` / `SiiAttribute` / `SiiValue` 把整个 SII 文件**无损**读入。解析器 / 序列化器对**任何不认识的字段一律原样保留（透传）**，确保即使我们未显式支持某字段也不会丢数据——这是存档安全性的根本保障。
 2. **类型化包装层（便捷访问）**：针对已知实体（`Bank` / `Player` / `Garage` / `Vehicle` / `Trailer` / `JobOffer` / `Economy`）提供基于属性名访问的包装类，底层仍操作通用 `SiiUnit`。改金钱 / 等级 / 磨损等**只读写对应字段**，其余结构原样透传。
 
-> 设计不变量：**修改 = 在通用模型上局部 SetAttribute；保存 = 通用模型 → 明文 SII**。绝不直接拼字符串改值，避免破坏语法。
+> 设计不变量：**修改 = 在通用模型上局部 SetAttribute；保存 = 通用模型 → 按加载时的原格式写回（加密 ScsC 重新加密 / zlib 重新压缩 / 其余明文）**。绝不直接拼字符串改值，避免破坏语法。
 
 ### 1.3 格式检测策略
 
@@ -40,7 +40,7 @@
 > `[0,4)` 魔数 `ScsC`、`[4,36)` 32 字节 HMAC-SHA256（密钥未公开，**不可复现**）、
 > `[36,52)` 16 字节 IV、`[52,56)` 解压后明文长度、`[56,)` AES-256-CBC 密文。
 > 解密解压后的载荷是**二进制 `BSII`**，需由 `SiiBsiiDecoder` 转换为 SII 文本。
-> 由于 HMAC 无法重新生成，**保存一律写明文 SII**（游戏引擎可直接读取），并在覆盖加密源文件前强制备份。
+> 由于 HMAC 无法重新生成，**保存时加密 `ScsC` 仍重新加密写回加密档（复用原 IV、保留原 HMAC），zlib 仍写回 zlib，仅 BSII 二进制降级为明文 SII**（游戏引擎均可直接读取）；覆盖加密源文件前强制备份。
 
 ---
 
@@ -400,7 +400,7 @@ classDiagram
 
 ## 4. 程序调用流程（时序图）
 
-打开存档 → 探测格式 → 解压(zlib) → 解析为通用模型 → 类型化包装供 UI 编辑 → 序列化回明文 → 写回文件（含备份）。
+打开存档 → 探测格式 → 解密/解压 → 解析为通用模型 → 类型化包装供 UI 编辑 → 序列化 → 按原格式写回文件（含备份）。
 
 ```mermaid
 sequenceDiagram
@@ -530,10 +530,10 @@ graph TD
 - **真实验证只用副本（硬约束）**：**任何**验证程序 —— 人手动点按钮、离屏渲染、截图工具、探针、
   性能基准、UI 回归自动化 —— **都必须指向临时目录里的副本**，绝不能指向
   `Documents\...\profiles\...\save\` 下的真实存档。
-  - **为什么**：本工具保存时写出的是**明文 SII**（见 §7「备份命名」与 README 使用须知 #2），
-    而原始加密存档**不可再生**（HMAC 密钥未公开）。所以只要有**任何**程序往真实存档上写了
-    一把，那个文件就会变成明文 —— 本工具保存时会自动备份原档（所以**数据不会丢**，
-    只是格式变了），但绕过本工具直接写的程序**不会留备份**。
+  - **为什么**：本工具保存时按**原格式**写回（加密档重新加密、**不会变成明文**，见 §7「备份命名」与 README 使用须知 #2），
+    但原始加密存档仍**不可再生**（HMAC 密钥未公开）。所以只要有**其它**程序往真实存档上写了
+    一把，那个文件就可能被顶替 —— 本工具保存时会自动备份原档（所以**数据不会丢**），
+    但绕过本工具直接写的程序**不会留备份**。
     更关键的是：**即使程序本身不调用保存，只要它加载了真实存档并渲染界面，就存在触发写入的
     路径** —— 不能依赖「我知道它不会写」。真实存档目录里那两份 5.3 MB 的明文
     `game_backup.sii`（游戏自己保存时的旧档备份）就说明这套存档历史上被以明文形式覆盖过；
@@ -561,7 +561,7 @@ graph TD
    - 卡车磨损：`vehicle` unit 的 `engine_wear` / `transmission_wear` / `cabin_wear` / `chassis_wear`（FLOAT，十六进制浮点）+ `wheels_wear`（数组）；剩余油量在 `fuel_relative`。
    - 挂车：`trailer` unit 的 `trailer_definition` / `trailer_body_wear` / `chassis_wear` / `wheels_wear`。
    - 货运：`job_offer_data` unit 的 `target` / `cargo` / `company_truck` / `urgency` / `units_count` / `fill_ratio` / `trailer_place`。
-2. **二进制 / 3NK 格式（P2）**：v1 仅明文 + zlib；`SiiFormatDetector` 已预留 `Binary` / `Unknown` 分支，后续接入参考项目 `SII_Decrypt.dll` 的另两种格式解析。
+2. **3NK 格式（P2）**：v1 已支持 明文 / zlib / 加密(ScsC) / 二进制(BSII) 四种；`SiiFormatDetector` 已预留 `Unknown` 分支，后续接入参考项目 `SII_Decrypt.dll` 的 3NK 格式解析。
 3. **Steam 路径探测方式**：注册表（`HKEY_CURRENT_USER\Software\Valve\Steam` 的 `SteamPath`）vs 常见路径规则；建议「注册表优先 + 手动指定兜底」。
 4. **备份策略默认开关与保留数量**：默认是否开启、保留份数、命名规则（见 §7）。
 5. **数值边界与校验**：金钱 / 等级 / 技能是否对齐游戏内上限；超限策略（截断 / 警告 / 拒绝）。
