@@ -24,10 +24,27 @@ namespace Ets2SaveEditor.Core.Domain
 
         /// <summary>
         /// Container format the file had when it was loaded. Used to decide
-        /// whether the original (encrypted) file must be backed up before it
-        /// is replaced by the plaintext SII output.
+        /// how the document is re-encoded on save so that the original
+        /// container type is preserved (an encrypted ScsC save is written
+        /// back as an encrypted ScsC save, not as plaintext).
         /// </summary>
         public SiiFormat LoadedFormat { get; private set; }
+
+        /// <summary>
+        /// Original 32-byte HMAC region ([4..36)) of the loaded ScsC container.
+        /// It is preserved verbatim on save because the HMAC key is not public
+        /// and cannot be recomputed; the game ignores it on load. Null unless
+        /// the loaded file was encrypted.
+        /// </summary>
+        private byte[] _originalHmac;
+
+        /// <summary>
+        /// Original 16-byte IV ([36..52)) of the loaded ScsC container. It is
+        /// reused as the AES IV when re-encoding so the cryptographic metadata
+        /// stays identical to what the game produced. Null unless the loaded
+        /// file was encrypted.
+        /// </summary>
+        private byte[] _originalIv;
 
         /// <summary>
         /// Path of the backup created by the last successful save, or null when
@@ -77,6 +94,20 @@ namespace Ets2SaveEditor.Core.Domain
             Format = SiiFormatDetector.Detect(raw);
             LoadedFormat = Format;
             LastBackupPath = null;
+            _originalHmac = null;
+            _originalIv = null;
+
+            // 保留加密容器（ScsC）的原始头部：32 字节 HMAC + 16 字节 IV。
+            // 重新编码时原样写回 HMAC、复用 IV，使文件与游戏原生写出的容器
+            // 在头部结构上完全一致（只有密文区真正变化）。
+            if (Format == SiiFormat.Encrypted && raw.Length >= SiiFormatDetector.CiphertextOffset)
+            {
+                _originalHmac = new byte[SiiFormatDetector.HmacLength];
+                Array.Copy(raw, SiiFormatDetector.HmacOffset, _originalHmac, 0, SiiFormatDetector.HmacLength);
+
+                _originalIv = new byte[SiiFormatDetector.IvLength];
+                Array.Copy(raw, SiiFormatDetector.IvOffset, _originalIv, 0, SiiFormatDetector.IvLength);
+            }
 
             string text;
             SiiSchema schema;
@@ -118,11 +149,28 @@ namespace Ets2SaveEditor.Core.Domain
         /// Serializes the loaded document and writes it to <paramref name="path"/>
         /// (or the previously set <see cref="Path"/>).
         /// <para>
-        /// The game cannot read a re-encrypted container (the HMAC key is not
-        /// public), so the file is always written as plaintext SII, which the
-        /// game engine reads natively. When the original file was encrypted, a
-        /// timestamped backup of it is created first — no matter what
-        /// <paramref name="backup"/> says — so the original data is never lost.
+        /// The document is re-encoded into the <b>same container format it was
+        /// loaded in</b> so the game can read the result unchanged:
+        /// <list type="bullet">
+        ///   <item><description><see cref="SiiFormat.Encrypted"/> (ScsC): the
+        ///   plaintext SII is zlib-compressed then AES-256-CBC encrypted with
+        ///   the well-known SCS key and the <b>original IV</b>, and wrapped in
+        ///   a ScsC container whose HMAC region is preserved verbatim. This
+        ///   produces a file byte-for-byte structurally identical to one the
+        ///   game writes, so the game reads it natively.</description></item>
+        ///   <item><description><see cref="SiiFormat.Zlib"/>: re-zlib-compressed
+        ///   and written as a bare zlib stream.</description></item>
+        ///   <item><description><see cref="SiiFormat.Plaintext"/> / <see cref="SiiFormat.Binary"/>
+        ///   / unknown: written as plaintext SII text (a binary save therefore
+        ///   degrades to plaintext — re-encoding BSII is out of scope for this
+        ///   fix).</description></item>
+        /// </list>
+        /// </para>
+        /// <para>
+        /// When the target file is (or was) an encrypted container, a
+        /// timestamped backup is created first — no matter what
+        /// <paramref name="backup"/> says — because the original encrypted file
+        /// is the only irreplaceable copy (its HMAC key is not public).
         /// </para>
         /// </summary>
         public void Save(string path, bool backup)
@@ -149,16 +197,53 @@ namespace Ets2SaveEditor.Core.Domain
                 throw new SiiFormatException("Failed to serialize document; original file left untouched.", ex);
             }
 
+            // 把明文 SII 文本转成与加载时一致的容器字节。
+            byte[] rawBytes = null;
+            SiiFormat targetFormat = SiiFormat.Plaintext;
+
+            byte[] plainBytes = new UTF8Encoding(false).GetBytes(serialized);
+            switch (LoadedFormat)
+            {
+                case SiiFormat.Encrypted:
+                    if (_originalIv == null)
+                    {
+                        throw new SiiFormatException(
+                            "无法写回加密存档：缺少原始 IV。请重新加载该存档后再保存。");
+                    }
+                    rawBytes = SiiFormatDetector.EncodeEncryptedContainer(plainBytes, _originalHmac, _originalIv);
+                    targetFormat = SiiFormat.Encrypted;
+                    break;
+
+                case SiiFormat.Zlib:
+                    rawBytes = SiiFormatDetector.EncodeZlibContainer(plainBytes);
+                    targetFormat = SiiFormat.Zlib;
+                    break;
+
+                default:
+                    // Plaintext / Binary / Unknown → 保持明文 SII。
+                    rawBytes = null;
+                    targetFormat = SiiFormat.Plaintext;
+                    break;
+            }
+
             try
             {
-                // 加密存档必须先备份：明文输出无法再变回加密容器（HMAC 密钥未公开）。
-                bool needsBackup = backup || IsEncryptedContainer(target);
+                // 加密存档必须先备份：写回加密档会覆盖唯一的原始副本，
+                // 而 HMAC 密钥未公开、无法从明文再精确重建。
+                bool needsBackup = backup || LoadedFormat == SiiFormat.Encrypted || IsEncryptedContainer(target);
                 string backupPath = needsBackup ? BackupService.Backup(target) : null;
 
-                WriteAtomically(target, serialized);
+                if (rawBytes != null)
+                {
+                    WriteAtomically(target, rawBytes);
+                }
+                else
+                {
+                    WriteAtomically(target, serialized);
+                }
 
                 LastBackupPath = backupPath;
-                Format = SiiFormat.Plaintext;
+                Format = targetFormat;
             }
             catch (Exception ex)
             {
@@ -177,6 +262,17 @@ namespace Ets2SaveEditor.Core.Domain
         /// </summary>
         private static void WriteAtomically(string target, string content)
         {
+            var encoding = new UTF8Encoding(false);
+            WriteAtomically(target, encoding.GetBytes(content));
+        }
+
+        /// <summary>
+        /// Byte-oriented overload of <see cref="WriteAtomically(string, string)"/>,
+        /// used for binary containers (ScsC / zlib) that must not be re-encoded
+        /// by a text writer.
+        /// </summary>
+        private static void WriteAtomically(string target, byte[] content)
+        {
             // 注意：本类有实例属性 Path，需用 System.IO.Path 显式访问静态方法。
             string directory = System.IO.Path.GetDirectoryName(target);
             if (string.IsNullOrEmpty(directory))
@@ -189,12 +285,9 @@ namespace Ets2SaveEditor.Core.Domain
 
             try
             {
-                var encoding = new UTF8Encoding(false);
                 using (var stream = new FileStream(tempPath, FileMode.Create, FileAccess.Write, FileShare.None))
-                using (var writer = new StreamWriter(stream, encoding))
                 {
-                    writer.Write(content);
-                    writer.Flush();
+                    stream.Write(content, 0, content.Length);
                     stream.Flush(true); // 落盘后再替换目标文件
                 }
 

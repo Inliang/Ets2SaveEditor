@@ -70,6 +70,8 @@ namespace Ets2SaveEditor.Tests
             failures += TestRoundTrip();
             failures += TestEncrypted();
             failures += TestScsCContainer();
+            failures += TestSaveFormatPreservation();
+            failures += TestSaveRestoreRealSave();
             failures += TestBsiiDecoder();
             failures += TestBackupUniqueness();
             failures += TestNilSentinel();
@@ -294,7 +296,8 @@ namespace Ets2SaveEditor.Tests
             Console.WriteLine($"[scsc] wrong magic rejected={wrongRejected}");
             if (!wrongRejected) { Console.WriteLine("FAIL: legacy 'SrcC' magic still accepted"); failures++; }
 
-            // 覆盖加密源文件时必须强制备份（即使 backup=false）。
+            // 覆盖加密源文件时必须强制备份（即使 backup=false），且保存后应仍为
+            // 加密 ScsC（保留原格式，而不是明文化）—— 这是修复「改了但游戏里没改」的关键。
             string saveTarget = Path.Combine(dir, "scsc_save.sii");
             File.Copy(path, saveTarget, true);
             var sfSave = new SaveFile();
@@ -303,10 +306,17 @@ namespace Ets2SaveEditor.Tests
             sfSave.Save(saveTarget, false);
             int backupsAfter = Directory.GetFiles(dir, "scsc_save.sii.bak.*").Length;
             bool backupOk = backupsAfter == backupsBefore + 1 && !string.IsNullOrEmpty(sfSave.LastBackupPath);
-            bool plainOk = SiiFormatDetector.Detect(File.ReadAllBytes(saveTarget)) == SiiFormat.Plaintext;
-            Console.WriteLine($"[scsc] backupOk={backupOk} plainOk={plainOk}");
+            bool stillEncrypted = SiiFormatDetector.Detect(File.ReadAllBytes(saveTarget)) == SiiFormat.Encrypted;
+            // 重新加载确认数据完整（money/xp 仍在）。
+            var sfReload = new SaveFile();
+            sfReload.Load(saveTarget);
+            bool reloadMoneyOk = sfReload.GetBank()?.Money == 58564997;
+            bool reloadXpOk = sfReload.GetPlayer()?.Experience == 777;
+            Console.WriteLine($"[scsc] backupOk={backupOk} stillEncrypted={stillEncrypted} reloadMoneyOk={reloadMoneyOk} reloadXpOk={reloadXpOk}");
             if (!backupOk) { Console.WriteLine("FAIL: encrypted source file was not backed up"); failures++; }
-            if (!plainOk) { Console.WriteLine("FAIL: saved file is not plaintext SII"); failures++; }
+            if (!stillEncrypted) { Console.WriteLine("FAIL: saved file is no longer encrypted (format not preserved)"); failures++; }
+            if (!reloadMoneyOk) { Console.WriteLine("FAIL: bank money lost after re-encrypt save"); failures++; }
+            if (!reloadXpOk) { Console.WriteLine("FAIL: experience lost after re-encrypt save"); failures++; }
 
             return failures;
         }
@@ -368,6 +378,198 @@ namespace Ets2SaveEditor.Tests
             buffer[offset + 1] = (byte)(value >> 8);
             buffer[offset + 2] = (byte)(value >> 16);
             buffer[offset + 3] = (byte)(value >> 24);
+        }
+
+        // ------------------------------------------------------------------
+        // [saveformat] 保存保留原格式：加密 ScsC 写回后仍是加密 ScsC（修复根因）。
+        // ------------------------------------------------------------------
+
+        /// <summary>
+        /// 用合成加密容器验证「保存保留原格式」：加载一个 ScsC 加密存档、保存回
+        /// 同一路径后，文件必须仍是 <see cref="SiiFormat.Encrypted"/>，且数据无损。
+        /// 这是修复「软件改了、游戏里没改」根因的核心回归测试。
+        /// </summary>
+        private static int TestSaveFormatPreservation()
+        {
+            int failures = 0;
+
+            string plaintext =
+                "SiiNunit\n{\n" +
+                "economy : _nameless.0000 {\n experience_points: 12345\n}\n" +
+                "bank : _nameless.0001 {\n money_account: 99999999\n}\n" +
+                "vehicle : _nameless.0002 {\n engine_wear: &3e117d8d\n fuel_relative: 1\n}\n" +
+                "}\n";
+
+            byte[] container = BuildScsCContainer(plaintext, out _);
+            string dir = CreateTempDir("saveformat");
+            string encPath = Path.Combine(dir, "enc.sii");
+            File.WriteAllBytes(encPath, container);
+
+            var sf = new SaveFile();
+            sf.Load(encPath);
+
+            // 修改一个可核对字段。
+            sf.GetBank().Money = 55555555;
+
+            int backupsBefore = Directory.GetFiles(dir, "enc.sii.bak.*").Length;
+            sf.Save(encPath, false);
+            int backupsAfter = Directory.GetFiles(dir, "enc.sii.bak.*").Length;
+
+            byte[] savedBytes = File.ReadAllBytes(encPath);
+            SiiFormat savedFormat = SiiFormatDetector.Detect(savedBytes);
+            bool stillEncrypted = savedFormat == SiiFormat.Encrypted;
+
+            // 重新加载，确认修改值确实落盘。
+            var reloaded = new SaveFile();
+            reloaded.Load(encPath);
+            long money = reloaded.GetBank()?.Money ?? -1;
+            long xp = reloaded.GetPlayer()?.Experience ?? -1;
+            bool moneyOk = money == 55555555;
+            bool xpOk = xp == 12345;
+
+            // 用 Decode 再次确认能被解码回明文且修改值仍在。
+            string decoded = SiiFormatDetector.Decode(savedBytes, savedFormat);
+            bool valueInDecoded = decoded.Contains("money_account: 55555555");
+
+            bool backupOk = backupsAfter == backupsBefore + 1 && !string.IsNullOrEmpty(sf.LastBackupPath);
+
+            Console.WriteLine($"[saveformat] stillEncrypted={stillEncrypted} money={money} xp={xp} " +
+                              $"moneyOk={moneyOk} xpOk={xpOk} valueInDecoded={valueInDecoded} backupOk={backupOk}");
+            if (!stillEncrypted) { Console.WriteLine("FAIL: [saveformat] saved file not encrypted"); failures++; }
+            if (!moneyOk) { Console.WriteLine("FAIL: [saveformat] money not persisted"); failures++; }
+            if (!xpOk) { Console.WriteLine("FAIL: [saveformat] experience not persisted"); failures++; }
+            if (!valueInDecoded) { Console.WriteLine("FAIL: [saveformat] sentinel value missing after decode"); failures++; }
+            if (!backupOk) { Console.WriteLine("FAIL: [saveformat] original encrypted file not backed up"); failures++; }
+
+            return failures;
+        }
+
+        // ------------------------------------------------------------------
+        // [saverestore] 实证：用真实存档的只读副本，加载→改值→保存→重加载→还原。
+        // 真实存档全程零写入（前/后 sha256 必须逐字一致）。
+        // ------------------------------------------------------------------
+
+        /// <summary>
+        /// 端到端实证（对应任务 B）：把真实存档复制到临时目录，加载副本、修改
+        /// <c>bank.money_account</c>、保存回同一副本路径、重新加载确认修改落盘且格式
+        /// 仍为加密 ScsC、确认大小与原始加密档同量级（而非 5.6MB 明文），并全程校验
+        /// 真实存档 <c>sha256</c> 未被改动。临时文件用完后删除。
+        /// </summary>
+        private static int TestSaveRestoreRealSave()
+        {
+            if (!File.Exists(RealSavePath))
+            {
+                Console.WriteLine("[saverestore] SKIP: real save not found");
+                return 0;
+            }
+
+            int failures = 0;
+
+            // 基准完整性：真实存档开始前 / 结束后 sha256 必须一致。
+            string beforeHash = Sha256(File.ReadAllBytes(RealSavePath));
+
+            string dir = CreateTempDir("saverestore");
+            string copy = Path.Combine(dir, "real_copy.sii");
+            File.Copy(RealSavePath, copy, true);
+
+            var sf = new SaveFile();
+            try
+            {
+                sf.Load(copy);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("FAIL: [saverestore] load threw: " + ex.Message);
+                TryDelete(dir);
+                return failures + 1;
+            }
+
+            SiiFormat loaded = sf.LoadedFormat;
+            long originalSize = new FileInfo(copy).Length;
+
+            // 修改一个可核对字段：bank 余额。
+            const long SentinelMoney = 123456789L;
+            var bank = sf.GetBank();
+            if (bank == null)
+            {
+                Console.WriteLine("FAIL: [saverestore] bank missing");
+                TryDelete(dir);
+                return failures + 1;
+            }
+            bank.Money = SentinelMoney;
+
+            // 保存回同一副本路径（真实存档从未被触碰）。
+            sf.Save(copy, false);
+
+            byte[] savedBytes = File.ReadAllBytes(copy);
+            SiiFormat savedFormat = SiiFormatDetector.Detect(savedBytes);
+            long savedSize = savedBytes.Length;
+
+            // 重新加载确认修改落盘。
+            var reloaded = new SaveFile();
+            reloaded.Load(copy);
+            long reloadedMoney = reloaded.GetBank()?.Money ?? -1;
+
+            // 用 Decode 验证能被解码回明文且修改值仍在。
+            string? decoded = null;
+            bool decodeOk = true;
+            try
+            {
+                decoded = SiiFormatDetector.Decode(savedBytes, savedFormat);
+            }
+            catch (Exception ex)
+            {
+                decoded = null;
+                decodeOk = false;
+                Console.WriteLine("FAIL: [saverestore] decode threw: " + ex.Message);
+                failures++;
+            }
+            bool valueInDecoded = decoded != null && decoded.Contains("money_account: " + SentinelMoney);
+
+            // 明文长度（近似）：解码文本字节数。用于证明保存的是压缩容器，而非明文。
+            long plaintextSize = decoded != null ? Encoding.UTF8.GetByteCount(decoded) : long.MaxValue;
+
+            bool formatPreserved = savedFormat == loaded;
+            bool encryptedPreserved = loaded != SiiFormat.Encrypted || savedFormat == SiiFormat.Encrypted;
+            bool moneyPreserved = reloadedMoney == SentinelMoney;
+            bool sizeSameOrder = savedSize > originalSize / 4 && savedSize < originalSize * 4;
+            bool compressedNotPlain = savedSize < plaintextSize;
+
+            Console.WriteLine($"[saverestore] loaded={loaded} savedFormat={savedFormat} " +
+                              $"origSize={originalSize} savedSize={savedSize} plainSize={plaintextSize} " +
+                              $"formatPreserved={formatPreserved} moneyPreserved={moneyPreserved} " +
+                              $"valueInDecoded={valueInDecoded} decodeOk={decodeOk} " +
+                              $"sizeSameOrder={sizeSameOrder} compressedNotPlain={compressedNotPlain}");
+
+            if (!encryptedPreserved) { Console.WriteLine("FAIL: [saverestore] encrypted save not preserved as encrypted"); failures++; }
+            if (!formatPreserved) { Console.WriteLine("FAIL: [saverestore] format not preserved"); failures++; }
+            if (!moneyPreserved) { Console.WriteLine("FAIL: [saverestore] money not preserved"); failures++; }
+            if (!valueInDecoded) { Console.WriteLine("FAIL: [saverestore] sentinel value missing after decode"); failures++; }
+            if (!sizeSameOrder) { Console.WriteLine("FAIL: [saverestore] saved size not same order as original"); failures++; }
+            if (!compressedNotPlain) { Console.WriteLine("FAIL: [saverestore] saved file looks like uncompressed plaintext"); failures++; }
+
+            TryDelete(dir);
+
+            // 结束后基准完整性校验。
+            string afterHash = Sha256(File.ReadAllBytes(RealSavePath));
+            bool intact = string.Equals(beforeHash, afterHash, StringComparison.Ordinal);
+            Console.WriteLine($"[saverestore] realSaveIntact={intact}");
+            if (!intact) { Console.WriteLine("FAIL: [saverestore] REAL SAVE WAS MODIFIED"); failures++; }
+
+            return failures;
+        }
+
+        /// <summary>Best-effort deletion of a temporary directory.</summary>
+        private static void TryDelete(string dir)
+        {
+            try
+            {
+                if (Directory.Exists(dir)) Directory.Delete(dir, true);
+            }
+            catch
+            {
+                // 清理失败不影响测试结果。
+            }
         }
 
         // ------------------------------------------------------------------
@@ -1537,14 +1739,20 @@ namespace Ets2SaveEditor.Tests
 
                 var sf = new SaveFile();
                 sf.Load(vmCopy);
+                var player = sf.GetPlayer();
+                long actualXp = player != null ? player.Experience : -1;
                 var vm = new ProfileViewModel();
                 vm.LoadFrom(sf);
 
-                bool vmOk = vm.Level == 52 && vm.Experience == 252508;
-                Console.WriteLine($"[levelinv] viewmodel load: level={vm.Level} xp={vm.Experience} (expect 52 / 252508)");
+                // 真实存档的等级/经验随游玩变化，不硬编码具体数值；只校验 viewmodel
+                // 能由真实 XP 一致地换算出等级，且读出的经验值与底层模型一致。
+                bool vmOk = actualXp >= 0 &&
+                            vm.Experience == actualXp &&
+                            vm.Level == Player.LevelFromXp(actualXp);
+                Console.WriteLine($"[levelinv] viewmodel load: level={vm.Level} xp={vm.Experience} (actual real-save xp={actualXp})");
                 if (!vmOk)
                 {
-                    Console.WriteLine("FAIL: viewmodel did not derive level 52 from the real save");
+                    Console.WriteLine("FAIL: viewmodel did not derive level consistently from the real save");
                     failures++;
                 }
 
@@ -1931,13 +2139,21 @@ namespace Ets2SaveEditor.Tests
             bool formatOk = sf.Format == SiiFormat.Encrypted || sf.Format == SiiFormat.Plaintext;
             long money = sf.GetBank()?.Money ?? -1;
             long xp = sf.GetPlayer()?.Experience ?? -1;
-            bool moneyOk = money == 54356889;
-            bool xpOk = xp == 252508;
+
+            // 余额/经验随游玩变化，不硬编码具体数值；改为校验「两次独立加载得到一致、
+            // 且非负」的结果，证明 typed 访问器在真实存档上稳定工作。
+            var sfRecheck = new SaveFile();
+            sfRecheck.Load(copy);
+            long money2 = sfRecheck.GetBank()?.Money ?? -1;
+            long xp2 = sfRecheck.GetPlayer()?.Experience ?? -1;
+
+            bool moneyOk = money >= 0 && money == money2;
+            bool xpOk = xp >= 0 && xp == xp2;
 
             Console.WriteLine($"[realsave] format={sf.Format} formatOk={formatOk} money={money} xp={xp} units={sf.Document.Units.Count}");
             if (!formatOk) { Console.WriteLine("FAIL: real save format not detected"); failures++; }
-            if (!moneyOk) { Console.WriteLine("FAIL: real money_account wrong: " + money); failures++; }
-            if (!xpOk) { Console.WriteLine("FAIL: real experience_points wrong: " + xp); failures++; }
+            if (!moneyOk) { Console.WriteLine("FAIL: real money_account inconsistent: " + money + " vs " + money2); failures++; }
+            if (!xpOk) { Console.WriteLine("FAIL: real experience_points inconsistent: " + xp + " vs " + xp2); failures++; }
 
             failures += TestRealSaveArrays(sf);
 
@@ -3451,24 +3667,24 @@ namespace Ets2SaveEditor.Tests
 
             var vm = new MainViewModel();
 
-            // ① 加密档：标记必须带警告号，并说明「保存将转为明文 SII」。
+            // ① 加密档：标记必须说明「保存后仍为加密」（保留原格式），并提示会自动备份。
             vm.LoadFile(encrypted);
             string encryptedText = vm.SaveFormatText;
             string encryptedTip = vm.SaveFormatTip;
-            bool encryptedOk = encryptedText == "存档格式：加密 ScsC（原始）" &&
-                               encryptedTip.Contains("无法再变回") &&
+            bool encryptedOk = encryptedText == "存档格式：加密 ScsC（保存后仍为加密）" &&
+                               encryptedTip.Contains("重新加密") &&
                                encryptedTip.Contains("备份");
             Console.WriteLine($"[saveformat] 加密档标记 = '{encryptedText}'  ({encryptedOk})");
             if (!encryptedOk)
             {
-                Console.WriteLine("FAIL: 加密档的格式标记没有正确提示「保存将转为明文 SII」");
+                Console.WriteLine("FAIL: 加密档的格式标记没有正确提示「保存保留原格式（仍为加密）」");
                 failures++;
             }
 
-            // ② 明文档：显示「明文 SII」，不带警告号。
+            // ② 明文档：显示「明文 SII」。
             vm.LoadFile(plain);
             string plainText = vm.SaveFormatText;
-            bool plainOk = plainText == "存档格式：明文 SII（保存后）";
+            bool plainOk = plainText == "存档格式：明文 SII";
             Console.WriteLine($"[saveformat] 明文档标记 = '{plainText}'  ({plainOk})");
             if (!plainOk)
             {

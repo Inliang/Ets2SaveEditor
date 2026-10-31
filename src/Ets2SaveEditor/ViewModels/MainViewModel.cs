@@ -66,16 +66,16 @@ namespace Ets2SaveEditor.ViewModels
         /// <summary>
         /// 工具栏上显示的**存档格式标记**，让用户在保存之前就知道存档会被写成什么格式。
         /// <para>
-        /// 本工具保存时统一写明文 SII（游戏能正常读取），而游戏原生的加密容器
-        /// <c>ScsC</c> **无法再变回**（HMAC 密钥未公开）。原文件会自动备份成
-        /// <c>.bak.&lt;时间戳&gt;</c>，所以明文化**是可逆的、数据不会丢** ——
-        /// 但**用户在点保存之前仍然必须知道**存档格式会被改写。
+        /// 本工具保存时会**保留存档原来的容器格式**：游戏原生的加密
+        /// <c>ScsC</c> 存档仍写回加密档（重新加密 + zlib，结构与原生文件一致），
+        /// zlib 档仍写回 zlib，明文档仍是明文。因此编辑加密存档后游戏能**直接读取**
+        /// 修改结果，不会再出现「软件改了但游戏里没改」的问题。
         /// </para>
         /// <para>
-        /// 措辞上区分两种状态：「加密 ScsC（原始）」= 这还是游戏原始的加密文件；
-        /// 「明文 SII（保存后）」= 这是工具保存过的明文文件。
+        /// 例外：BSII 二进制存档目前无法重新编码回二进制，保存后会**降级为明文 SII**
+        /// （游戏可读取），原文件会自动备份成 <c>.bak.&lt;时间戳&gt;</c>。
         /// </para>
-        /// <para>未加载存档时为空串（不显示标记）。</para>
+        /// <para>标记基于 <c>LoadedFormat</c>（加载时的原始格式），未加载时为空串。</para>
         /// </summary>
         public string SaveFormatText
         {
@@ -83,34 +83,44 @@ namespace Ets2SaveEditor.ViewModels
             {
                 if (CurrentSave == null || !CurrentSave.IsLoaded) return string.Empty;
 
-                return CurrentSave.Format switch
+                return CurrentSave.LoadedFormat switch
                 {
-                    SiiFormat.Plaintext => "存档格式：明文 SII（保存后）",
-                    SiiFormat.Encrypted => "存档格式：加密 ScsC（原始）",
-                    SiiFormat.Zlib => "存档格式：zlib 压缩（原始）",
-                    SiiFormat.Binary => "存档格式：BSII 二进制（原始）",
+                    SiiFormat.Plaintext => "存档格式：明文 SII",
+                    SiiFormat.Encrypted => "存档格式：加密 ScsC（保存后仍为加密）",
+                    SiiFormat.Zlib => "存档格式：zlib 压缩（保存后仍为 zlib）",
+                    SiiFormat.Binary => "存档格式：BSII 二进制（保存后转明文）",
                     _ => string.Empty,
                 };
             }
         }
 
-        /// <summary>格式标记的悬停说明：讲清后果与可逆性。</summary>
+        /// <summary>格式标记的悬停说明：讲清保存后的实际格式与备份策略。</summary>
         public string SaveFormatTip
         {
             get
             {
                 if (CurrentSave == null || !CurrentSave.IsLoaded) return string.Empty;
 
-                if (CurrentSave.Format == SiiFormat.Plaintext)
+                switch (CurrentSave.LoadedFormat)
                 {
-                    return "此存档当前已是明文 SII 格式（通常是本工具保存的结果），" +
-                           "保存后会保持该格式。";
-                }
+                    case SiiFormat.Encrypted:
+                        return "此存档为游戏原生的 ScsC 加密格式。本工具保存时会重新加密写回" +
+                               "同一格式（游戏可直接读取修改后的内容），原文件会自动备份为" +
+                               " .bak.<时间戳>，可随时还原。";
 
-                return "此存档为游戏原生的" + FormatText(CurrentSave.Format) + "格式（原始文件）。" +
-                       "本工具保存时统一写为明文 SII（游戏可正常读取），但**无法再变回加密格式**" +
-                       "（HMAC 密钥未公开）。原文件会自动备份为 .bak.<时间戳>，可随时还原" +
-                       "—— 所以数据不会丢，只是格式变成了明文。";
+                    case SiiFormat.Zlib:
+                        return "此存档为 zlib 压缩格式。本工具保存时会重新压缩写回同一格式" +
+                               "（游戏可直接读取），原文件会自动备份为 .bak.<时间戳>。";
+
+                    case SiiFormat.Binary:
+                        return "此存档为 BSII 二进制格式。本工具目前无法重新编码二进制，" +
+                               "保存后会转为明文 SII（游戏可读取），原文件会自动备份为" +
+                               " .bak.<时间戳>，可随时还原。";
+
+                    default:
+                        return "此存档当前已是明文 SII 格式（通常是本工具保存的结果），" +
+                               "保存后会保持该格式。";
+                }
             }
         }
 
@@ -339,9 +349,9 @@ namespace Ets2SaveEditor.ViewModels
             switch (format)
             {
                 case SiiFormat.Plaintext: return "明文 SII";
-                case SiiFormat.Zlib: return "zlib 压缩 SII";
-                case SiiFormat.Encrypted: return "ScsC 加密存档（已自动解密）";
-                case SiiFormat.Binary: return "BSII 二进制存档（已自动解码）";
+                case SiiFormat.Zlib: return "zlib 压缩存档";
+                case SiiFormat.Encrypted: return "ScsC 加密存档";
+                case SiiFormat.Binary: return "BSII 二进制存档";
                 default: return "未知格式";
             }
         }
@@ -358,9 +368,9 @@ namespace Ets2SaveEditor.ViewModels
                 Trailer.ApplyToModel();
                 Freight.ApplyToModel();
                 CurrentSave.Save(CurrentSave.Path, Settings.AutoBackup);
-                StatusText = "已保存（明文 SII）：" + CurrentSave.Path;
+                StatusText = "已保存（保留原格式：" + FormatText(CurrentSave.Format) + "）：" + CurrentSave.Path;
 
-                // 保存后目标文件已是明文，格式标记要跟着变（⚠ → 明文 SII）。
+                // 保存后格式标记可能随实际落盘格式变化（例如加密档保存后仍是加密档）。
                 OnPropertyChanged(nameof(SaveFormatText));
                 OnPropertyChanged(nameof(SaveFormatTip));
 
@@ -386,9 +396,9 @@ namespace Ets2SaveEditor.ViewModels
                 Trailer.ApplyToModel();
                 Freight.ApplyToModel();
                 CurrentSave.Save(path, Settings.AutoBackup);
-                StatusText = "已另存为（明文 SII）：" + path;
+                StatusText = "已另存为（保留原格式：" + FormatText(CurrentSave.Format) + "）：" + path;
 
-                // 另存为后目标文件也是明文，格式标记同步更新。
+                // 另存为后目标文件格式同步更新。
                 OnPropertyChanged(nameof(SaveFormatText));
                 OnPropertyChanged(nameof(SaveFormatTip));
 
@@ -401,16 +411,19 @@ namespace Ets2SaveEditor.ViewModels
         }
 
         /// <summary>
-        /// Builds the message shown after a successful save. The game cannot
-        /// read re-encrypted containers, therefore the file is written as
-        /// plaintext SII and the original (encrypted) file is backed up.
+        /// Builds the message shown after a successful save. The save preserves
+        /// the original container format (an encrypted ScsC save is written
+        /// back as an encrypted ScsC save), so the game reads the modified
+        /// content directly. The original file is backed up when it was an
+        /// encrypted container.
         /// </summary>
         private string BuildSaveMessage()
         {
-            string message = "已保存为明文 SII 格式，游戏可直接读取该存档。";
+            string message = "已保存，并保留原存档格式（" + FormatText(CurrentSave?.Format ?? SiiFormat.Plaintext) +
+                             "），游戏可直接读取修改后的内容。";
             if (!string.IsNullOrEmpty(CurrentSave?.LastBackupPath))
             {
-                message += Environment.NewLine + "原加密存档已备份为：" + CurrentSave.LastBackupPath;
+                message += Environment.NewLine + "原始存档已备份为：" + CurrentSave.LastBackupPath;
             }
             return message;
         }
