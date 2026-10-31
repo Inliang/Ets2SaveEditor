@@ -58,9 +58,9 @@
                            Foreground="{StaticResource MutedBrush}" TextTrimming="CharacterEllipsis"
                            ToolTip="{Binding LoadedPathText}"/>
 
-                <!-- 存档格式标记：保存时保留存档原来的容器格式（加密 ScsC 仍写回加密、
-                     zlib 仍写回 zlib、明文仍是明文），所以游戏能直接读取修改后的内容。
-                     例外：BSII 二进制会降级为明文。用 AccentBrush 区分显示，不用刺眼红色。 -->
+                <!-- 存档格式标记：保存时统一写回**明文 SiiNunit**（无论原存档是加密 ScsC /
+                     zlib / 二进制 / 明文），游戏不校验 HMAC、可直接读取修改后的内容，并在下次
+                     自动保存时重新加密成 ScsC。原加密档覆盖前会强制备份。用 AccentBrush 区分显示，不用刺眼红色。 -->
                 <TextBlock x:Name="TbxSaveFormat" Grid.Column="2" Text="{Binding SaveFormatText}"
                            VerticalAlignment="Center" Margin="10,0,0,0"
                            Foreground="{StaticResource AccentBrush}" FontWeight="SemiBold"

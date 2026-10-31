@@ -15,7 +15,7 @@
 | 语言 / 运行时 | **C# / .NET 8** | LTS 长期支持、跨项目引用简单、原生 `System.IO.Compression.ZLibStream` 可直接做托管 zlib 解压，无需 P/Invoke。 |
 | 桌面框架 | **WPF（Windows）** | ETS2 主平台为 Windows；WPF 的 XAML + 数据绑定 + 标签页（TabControl）天然契合 PRD 的多功能页签布局。 |
 | 架构模式 | **MVVM（CommunityToolkit.Mvvm）** | 通过 `[ObservableProperty]` / `RelayCommand` / `AsyncRelayCommand` 源码生成器，减少样板代码；视图与逻辑解耦，便于社区贡献与单元测试。 |
-| 压缩处理 | **`System.IO.Compression.ZLibStream`** | .NET 原生托管实现，零额外依赖，可安全解压 zlib 变体 SII；加载时解压为明文，保存时按原格式写回（加密 `ScsC` 重新加密、zlib 重新压缩、其余明文）。 |
+| 压缩处理 | **`System.IO.Compression.ZLibStream`** | .NET 原生托管实现，零额外依赖，可安全解压 zlib 变体 SII；加载时解压为明文，保存时统一写回明文 SII（游戏读取明文不做 HMAC 校验，下次自动保存时重新加密）。 |
 | 分层 | **Core 类库 + WPF 应用** | 解析 / 领域模型 / 游戏数据与 UI 彻底解耦；Core 可被测试、可被后续 CLI / MAUI 复用。 |
 
 ### 1.2 核心架构决策：通用模型 + 类型化包装（双层 SII 模型）
@@ -25,7 +25,7 @@
 1. **通用层（无损透传）**：`SiiDocument` / `SiiUnit` / `SiiAttribute` / `SiiValue` 把整个 SII 文件**无损**读入。解析器 / 序列化器对**任何不认识的字段一律原样保留（透传）**，确保即使我们未显式支持某字段也不会丢数据——这是存档安全性的根本保障。
 2. **类型化包装层（便捷访问）**：针对已知实体（`Bank` / `Player` / `Garage` / `Vehicle` / `Trailer` / `JobOffer` / `Economy`）提供基于属性名访问的包装类，底层仍操作通用 `SiiUnit`。改金钱 / 等级 / 磨损等**只读写对应字段**，其余结构原样透传。
 
-> 设计不变量：**修改 = 在通用模型上局部 SetAttribute；保存 = 通用模型 → 按加载时的原格式写回（加密 ScsC 重新加密 / zlib 重新压缩 / 其余明文）**。绝不直接拼字符串改值，避免破坏语法。
+> 设计不变量：**修改 = 在通用模型上局部 SetAttribute；保存 = 通用模型 → 统一写回明文 SiiNunit（游戏直接读取，下次自动保存重新加密）**。绝不直接拼字符串改值，避免破坏语法。
 
 ### 1.3 格式检测策略
 
@@ -40,7 +40,7 @@
 > `[0,4)` 魔数 `ScsC`、`[4,36)` 32 字节 HMAC-SHA256（密钥未公开，**不可复现**）、
 > `[36,52)` 16 字节 IV、`[52,56)` 解压后明文长度、`[56,)` AES-256-CBC 密文。
 > 解密解压后的载荷是**二进制 `BSII`**，需由 `SiiBsiiDecoder` 转换为 SII 文本。
-> 由于 HMAC 无法重新生成，**保存时加密 `ScsC` 仍重新加密写回加密档（复用原 IV、保留原 HMAC），zlib 仍写回 zlib，仅 BSII 二进制降级为明文 SII**（游戏引擎均可直接读取）；覆盖加密源文件前强制备份。
+> 由于 HMAC 无法重新生成，**保存时一律写回明文 SiiNunit（游戏读取明文不做 HMAC 校验、可直接读取，并在下次自动保存时重新加密成 ScsC）**；覆盖加密源文件前强制备份。
 
 ---
 

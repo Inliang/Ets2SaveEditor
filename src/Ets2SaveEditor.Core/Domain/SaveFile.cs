@@ -19,32 +19,24 @@ namespace Ets2SaveEditor.Core.Domain
         /// <summary>File system path of the save file.</summary>
         public string Path { get; set; }
 
-        /// <summary>Detected container format.</summary>
+        /// <summary>
+        /// Container format currently on disk. After <see cref="Save"/> it is
+        /// always <see cref="SiiFormat.Plaintext"/> because saves are written
+        /// back as plaintext <c>SiiNunit</c> (the game re-encrypts on its next
+        /// autosave). Before saving it matches <see cref="LoadedFormat"/>.
+        /// </summary>
         public SiiFormat Format { get; set; }
 
         /// <summary>
-        /// Container format the file had when it was loaded. Used to decide
-        /// how the document is re-encoded on save so that the original
-        /// container type is preserved (an encrypted ScsC save is written
-        /// back as an encrypted ScsC save, not as plaintext).
+        /// Container format the file had when it was loaded. Provided for
+        /// display/informational purposes only — it no longer influences how
+        /// the document is written. Saves are always written back as plaintext
+        /// <c>SiiNunit</c> (see <see cref="Save"/>): the game reads plaintext
+        /// without performing an HMAC check and re-encrypts the file on its
+        /// next autosave. An encrypted ScsC save is therefore written back as
+        /// plaintext, not as an encrypted ScsC save.
         /// </summary>
         public SiiFormat LoadedFormat { get; private set; }
-
-        /// <summary>
-        /// Original 32-byte HMAC region ([4..36)) of the loaded ScsC container.
-        /// It is preserved verbatim on save because the HMAC key is not public
-        /// and cannot be recomputed; the game ignores it on load. Null unless
-        /// the loaded file was encrypted.
-        /// </summary>
-        private byte[] _originalHmac;
-
-        /// <summary>
-        /// Original 16-byte IV ([36..52)) of the loaded ScsC container. It is
-        /// reused as the AES IV when re-encoding so the cryptographic metadata
-        /// stays identical to what the game produced. Null unless the loaded
-        /// file was encrypted.
-        /// </summary>
-        private byte[] _originalIv;
 
         /// <summary>
         /// Path of the backup created by the last successful save, or null when
@@ -94,20 +86,6 @@ namespace Ets2SaveEditor.Core.Domain
             Format = SiiFormatDetector.Detect(raw);
             LoadedFormat = Format;
             LastBackupPath = null;
-            _originalHmac = null;
-            _originalIv = null;
-
-            // 保留加密容器（ScsC）的原始头部：32 字节 HMAC + 16 字节 IV。
-            // 重新编码时原样写回 HMAC、复用 IV，使文件与游戏原生写出的容器
-            // 在头部结构上完全一致（只有密文区真正变化）。
-            if (Format == SiiFormat.Encrypted && raw.Length >= SiiFormatDetector.CiphertextOffset)
-            {
-                _originalHmac = new byte[SiiFormatDetector.HmacLength];
-                Array.Copy(raw, SiiFormatDetector.HmacOffset, _originalHmac, 0, SiiFormatDetector.HmacLength);
-
-                _originalIv = new byte[SiiFormatDetector.IvLength];
-                Array.Copy(raw, SiiFormatDetector.IvOffset, _originalIv, 0, SiiFormatDetector.IvLength);
-            }
 
             string text;
             SiiSchema schema;
@@ -149,28 +127,22 @@ namespace Ets2SaveEditor.Core.Domain
         /// Serializes the loaded document and writes it to <paramref name="path"/>
         /// (or the previously set <see cref="Path"/>).
         /// <para>
-        /// The document is re-encoded into the <b>same container format it was
-        /// loaded in</b> so the game can read the result unchanged:
-        /// <list type="bullet">
-        ///   <item><description><see cref="SiiFormat.Encrypted"/> (ScsC): the
-        ///   plaintext SII is zlib-compressed then AES-256-CBC encrypted with
-        ///   the well-known SCS key and the <b>original IV</b>, and wrapped in
-        ///   a ScsC container whose HMAC region is preserved verbatim. This
-        ///   produces a file byte-for-byte structurally identical to one the
-        ///   game writes, so the game reads it natively.</description></item>
-        ///   <item><description><see cref="SiiFormat.Zlib"/>: re-zlib-compressed
-        ///   and written as a bare zlib stream.</description></item>
-        ///   <item><description><see cref="SiiFormat.Plaintext"/> / <see cref="SiiFormat.Binary"/>
-        ///   / unknown: written as plaintext SII text (a binary save therefore
-        ///   degrades to plaintext — re-encoding BSII is out of scope for this
-        ///   fix).</description></item>
-        /// </list>
+        /// The document is <b>always written back as plaintext <c>SiiNunit</c>
+        /// text</b>, regardless of how it was originally stored (encrypted
+        /// ScsC, zlib, binary or already plaintext). The game does not perform
+        /// an HMAC check on plaintext saves and reads them directly; it then
+        /// re-encrypts the file on its next autosave. Re-encoding an edited
+        /// ScsC container with the original HMAC/IV would produce an invalid
+        /// HMAC (the key is not public), causing the game to silently fall back
+        /// to <c>profile.bak.sii</c> and discard every edit — so plaintext
+        /// write-back is the only correct approach for an external editor.
         /// </para>
         /// <para>
         /// When the target file is (or was) an encrypted container, a
         /// timestamped backup is created first — no matter what
         /// <paramref name="backup"/> says — because the original encrypted file
-        /// is the only irreplaceable copy (its HMAC key is not public).
+        /// is the only irreplaceable copy (its HMAC key is not public); the
+        /// backup lets the user restore the original if needed.
         /// </para>
         /// </summary>
         public void Save(string path, bool backup)
@@ -197,50 +169,21 @@ namespace Ets2SaveEditor.Core.Domain
                 throw new SiiFormatException("Failed to serialize document; original file left untouched.", ex);
             }
 
-            // 把明文 SII 文本转成与加载时一致的容器字节。
-            byte[] rawBytes = null;
+            // 关键：无论原存档是加密(ScsC)/zlib/二进制/明文，保存时一律写回**明文 SiiNunit**。
+            // ScsC 容器的 HMAC 密钥由 SCS 保密，外部工具无法为改动后的内容生成合法 HMAC；
+            // 若原样写回加密容器（复用旧 HMAC/IV），游戏加载时 HMAC 校验失败会静默回退到
+            // profile.bak.sii，导致所有修改不生效。明文 SiiNunit 游戏不做 HMAC 校验、可直接读取，
+            // 并在下次自动保存时用合法 HMAC 重新加密成 ScsC（业界 SII_Decrypt / easy-scsmodmanager
+            // 等公认做法）。
             SiiFormat targetFormat = SiiFormat.Plaintext;
-
-            byte[] plainBytes = new UTF8Encoding(false).GetBytes(serialized);
-            switch (LoadedFormat)
-            {
-                case SiiFormat.Encrypted:
-                    if (_originalIv == null)
-                    {
-                        throw new SiiFormatException(
-                            "无法写回加密存档：缺少原始 IV。请重新加载该存档后再保存。");
-                    }
-                    rawBytes = SiiFormatDetector.EncodeEncryptedContainer(plainBytes, _originalHmac, _originalIv);
-                    targetFormat = SiiFormat.Encrypted;
-                    break;
-
-                case SiiFormat.Zlib:
-                    rawBytes = SiiFormatDetector.EncodeZlibContainer(plainBytes);
-                    targetFormat = SiiFormat.Zlib;
-                    break;
-
-                default:
-                    // Plaintext / Binary / Unknown → 保持明文 SII。
-                    rawBytes = null;
-                    targetFormat = SiiFormat.Plaintext;
-                    break;
-            }
 
             try
             {
-                // 加密存档必须先备份：写回加密档会覆盖唯一的原始副本，
-                // 而 HMAC 密钥未公开、无法从明文再精确重建。
-                bool needsBackup = backup || LoadedFormat == SiiFormat.Encrypted || IsEncryptedContainer(target);
+                // 即使写回明文，若目标原本是加密容器，覆盖前仍强制备份（保留可还原的原始副本）。
+                bool needsBackup = backup || IsEncryptedContainer(target);
                 string backupPath = needsBackup ? BackupService.Backup(target) : null;
 
-                if (rawBytes != null)
-                {
-                    WriteAtomically(target, rawBytes);
-                }
-                else
-                {
-                    WriteAtomically(target, serialized);
-                }
+                WriteAtomically(target, serialized);
 
                 LastBackupPath = backupPath;
                 Format = targetFormat;

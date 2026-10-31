@@ -67,14 +67,14 @@ namespace Ets2SaveEditor.ViewModels
         /// <summary>
         /// 工具栏上显示的**存档格式标记**，让用户在保存之前就知道存档会被写成什么格式。
         /// <para>
-        /// 本工具保存时会**保留存档原来的容器格式**：游戏原生的加密
-        /// <c>ScsC</c> 存档仍写回加密档（重新加密 + zlib，结构与原生文件一致），
-        /// zlib 档仍写回 zlib，明文档仍是明文。因此编辑加密存档后游戏能**直接读取**
-        /// 修改结果，不会再出现「软件改了但游戏里没改」的问题。
+        /// 本工具保存时统一写回**明文 <c>SiiNunit</c>**：无论原存档是加密 <c>ScsC</c>、
+        /// zlib 还是二进制，保存后都变成游戏可直接读取的明文 SII；游戏读取明文时不校验
+        /// HMAC，并在下次自动保存时用合法密钥重新加密成 ScsC。这样编辑后的内容（金钱 /
+        /// 等级 / 磨损等）一定能生效，不会再出现「软件改了但游戏里没改」的问题。
         /// </para>
         /// <para>
-        /// 例外：BSII 二进制存档目前无法重新编码回二进制，保存后会**降级为明文 SII**
-        /// （游戏可读取），原文件会自动备份成 <c>.bak.&lt;时间戳&gt;</c>。
+        /// 例外：原加密档在覆盖前会**强制备份**成 <c>.bak.&lt;时间戳&gt;</c>，因为原始加密
+        /// 容器的 HMAC 密钥未公开、不可再生，备份是唯一的还原手段。
         /// </para>
         /// <para>标记基于 <c>LoadedFormat</c>（加载时的原始格式），未加载时为空串。</para>
         /// </summary>
@@ -87,8 +87,8 @@ namespace Ets2SaveEditor.ViewModels
                 return CurrentSave.LoadedFormat switch
                 {
                     SiiFormat.Plaintext => "存档格式：明文 SII",
-                    SiiFormat.Encrypted => "存档格式：加密 ScsC（保存后仍为加密）",
-                    SiiFormat.Zlib => "存档格式：zlib 压缩（保存后仍为 zlib）",
+                    SiiFormat.Encrypted => "存档格式：加密 ScsC（保存后转明文 SII）",
+                    SiiFormat.Zlib => "存档格式：zlib 压缩（保存后转明文 SII）",
                     SiiFormat.Binary => "存档格式：BSII 二进制（保存后转明文）",
                     _ => string.Empty,
                 };
@@ -105,13 +105,14 @@ namespace Ets2SaveEditor.ViewModels
                 switch (CurrentSave.LoadedFormat)
                 {
                     case SiiFormat.Encrypted:
-                        return "此存档为游戏原生的 ScsC 加密格式。本工具保存时会重新加密写回" +
-                               "同一格式（游戏可直接读取修改后的内容），原文件会自动备份为" +
-                               " .bak.<时间戳>，可随时还原。";
+                        return "此存档为游戏原生的 ScsC 加密格式。本工具保存时会写回**明文 SII**" +
+                               "（游戏可直接读取修改后的内容、不做 HMAC 校验，并在下次自动保存时" +
+                               "重新加密），原加密文件会自动备份为 .bak.<时间戳>，可随时还原。";
 
                     case SiiFormat.Zlib:
-                        return "此存档为 zlib 压缩格式。本工具保存时会重新压缩写回同一格式" +
-                               "（游戏可直接读取），原文件会自动备份为 .bak.<时间戳>。";
+                        return "此存档为 zlib 压缩格式。本工具保存时会写回**明文 SII**" +
+                               "（游戏可直接读取、不做 HMAC 校验），原文件会自动备份为" +
+                               ".bak.<时间戳>，可随时还原。";
 
                     case SiiFormat.Binary:
                         return "此存档为 BSII 二进制格式。本工具目前无法重新编码二进制，" +
@@ -519,16 +520,15 @@ namespace Ets2SaveEditor.ViewModels
         }
 
         /// <summary>
-        /// Builds the message shown after a successful save. The save preserves
-        /// the original container format (an encrypted ScsC save is written
-        /// back as an encrypted ScsC save), so the game reads the modified
-        /// content directly. The original file is backed up when it was an
-        /// encrypted container.
+        /// Builds the message shown after a successful save. Saves are always
+        /// written back as plaintext <c>SiiNunit</c> (the game reads plaintext
+        /// without an HMAC check and re-encrypts on its next autosave), so the
+        /// modified content is guaranteed to load. The original file is backed
+        /// up when it was an encrypted container.
         /// </summary>
         private string BuildSaveMessage()
         {
-            string message = "已保存，并保留原存档格式（" + FormatText(CurrentSave?.Format ?? SiiFormat.Plaintext) +
-                             "），游戏可直接读取修改后的内容。";
+            string message = "已保存为明文 SII（游戏可直接读取修改后的内容）。";
             if (!string.IsNullOrEmpty(CurrentSave?.LastBackupPath))
             {
                 message += Environment.NewLine + "原始存档已备份为：" + CurrentSave.LastBackupPath;
