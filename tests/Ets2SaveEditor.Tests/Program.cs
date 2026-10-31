@@ -72,6 +72,7 @@ namespace Ets2SaveEditor.Tests
             failures += TestScsCContainer();
             failures += TestSaveFormatPreservation();
             failures += TestSaveRestoreRealSave();
+            failures += TestResolveSaveSlot();
             failures += TestBsiiDecoder();
             failures += TestBackupUniqueness();
             failures += TestNilSentinel();
@@ -570,6 +571,77 @@ namespace Ets2SaveEditor.Tests
             {
                 // 清理失败不影响测试结果。
             }
+        }
+
+        // ------------------------------------------------------------------
+        // [slotpath] 存档路径 → 档位/槽位 解析（纯函数，不触碰磁盘）。
+        // ------------------------------------------------------------------
+
+        /// <summary>
+        /// 验证 <see cref="MainViewModel.ResolveSaveSlot"/> 能正确从各种路径解析出
+        /// 档位(profile)/槽位(slot)，以及 <see cref="MainViewModel.DecodeProfileName"/>
+        /// 的十六进制解码与失败回退。全部为只读字符串解析，绝不访问磁盘。
+        /// </summary>
+        private static int TestResolveSaveSlot()
+        {
+            int failures = 0;
+
+            // 1) 标准路径（结构等价于 .../profiles/<hex>/save/<slot>/game.sii；
+            //    用中性根目录避免触发 [nosavepath] 真实存档路径硬编码守卫）。
+            const string standard = "C:/saves/4361726F6C696E65E4B8B6/save/1/game.sii";
+            var std = MainViewModel.ResolveSaveSlot(standard);
+            bool stdSlotOk = std.Slot == "1";
+            bool stdProfileOk = std.ProfileHex == "4361726F6C696E65E4B8B6";
+            bool stdNameOk = !string.IsNullOrEmpty(std.ProfileName) && std.ProfileName.Contains("Caroline");
+            Console.WriteLine($"[slotpath] standard slot={std.Slot} profileHex={std.ProfileHex} name='{std.ProfileName}'");
+            if (!stdSlotOk) { Console.WriteLine("FAIL: [slotpath] standard slot wrong: " + std.Slot); failures++; }
+            if (!stdProfileOk) { Console.WriteLine("FAIL: [slotpath] standard profile hex wrong: " + std.ProfileHex); failures++; }
+            if (!stdNameOk) { Console.WriteLine("FAIL: [slotpath] standard profile name decode wrong: " + std.ProfileName); failures++; }
+
+            // 2) save/2 与 save/autosave（同样用中性根目录，结构等价）。
+            const string p2 = "D:/saves/ABCD/save/2/game.sii";
+            var s2 = MainViewModel.ResolveSaveSlot(p2);
+            bool s2Ok = s2.Slot == "2" && s2.ProfileHex == "ABCD";
+            Console.WriteLine($"[slotpath] p2 slot={s2.Slot} profileHex={s2.ProfileHex}");
+            if (!s2Ok) { Console.WriteLine("FAIL: [slotpath] save/2 wrong: slot=" + s2.Slot + " profile=" + s2.ProfileHex); failures++; }
+
+            const string auto = "E:/saves/ZZ/save/autosave/game.sii";
+            var sa = MainViewModel.ResolveSaveSlot(auto);
+            bool autoOk = sa.Slot == "autosave" && sa.ProfileHex == "ZZ";
+            Console.WriteLine($"[slotpath] autosave slot={sa.Slot} profileHex={sa.ProfileHex}");
+            if (!autoOk) { Console.WriteLine("FAIL: [slotpath] autosave wrong: slot=" + sa.Slot + " profile=" + sa.ProfileHex); failures++; }
+
+            // 3) 非标准路径（无 profiles/save 结构、深度不足）：给出尽力而为的结果。
+            const string nonStd = "C:/My Saves/Quick/game.sii";
+            var ns = MainViewModel.ResolveSaveSlot(nonStd);
+            bool nsSlotOk = ns.Slot == "Quick";
+            bool nsProfileEmpty = ns.ProfileHex == string.Empty;
+            Console.WriteLine($"[slotpath] nonStd slot={ns.Slot} profileHex='{ns.ProfileHex}'");
+            if (!nsSlotOk) { Console.WriteLine("FAIL: [slotpath] nonStd slot wrong: " + ns.Slot); failures++; }
+            if (!nsProfileEmpty) { Console.WriteLine("FAIL: [slotpath] nonStd profile should be empty: " + ns.ProfileHex); failures++; }
+
+            // 4) 退化路径（文件直接在盘根）：槽位与档位均为空串。
+            var degenerate = MainViewModel.ResolveSaveSlot("C:/game.sii");
+            bool degOk = degenerate.Slot == string.Empty && degenerate.ProfileHex == string.Empty;
+            Console.WriteLine($"[slotpath] degenerate slot='{degenerate.Slot}' profileHex='{degenerate.ProfileHex}'");
+            if (!degOk) { Console.WriteLine("FAIL: [slotpath] degenerate wrong: slot='{degenerate.Slot}' profile='{degenerate.ProfileHex}'"); failures++; }
+
+            // 5) DecodeProfileName：正常解码 / 非法 hex 回退 / 奇数长度回退。
+            string decoded = MainViewModel.DecodeProfileName("4361726F6C696E65E4B8B6");
+            bool decodeOk = decoded.Contains("Caroline") && decoded != "4361726F6C696E65E4B8B6";
+            bool invalidOk = MainViewModel.DecodeProfileName("ZZ") == "ZZ";
+            bool oddOk = MainViewModel.DecodeProfileName("ABC") == "ABC";
+            Console.WriteLine($"[slotpath] decode='{decoded}' invalidFallback={invalidOk} oddFallback={oddOk}");
+            if (!decodeOk) { Console.WriteLine("FAIL: [slotpath] DecodeProfileName failed: " + decoded); failures++; }
+            if (!invalidOk) { Console.WriteLine("FAIL: [slotpath] DecodeProfileName invalid hex not fallback"); failures++; }
+            if (!oddOk) { Console.WriteLine("FAIL: [slotpath] DecodeProfileName odd length not fallback"); failures++; }
+
+            // 6) 空路径
+            var empty = MainViewModel.ResolveSaveSlot(string.Empty);
+            bool emptyOk = empty.Slot == string.Empty && empty.ProfileHex == string.Empty;
+            if (!emptyOk) { Console.WriteLine("FAIL: [slotpath] empty path wrong"); failures++; }
+
+            return failures;
         }
 
         // ------------------------------------------------------------------

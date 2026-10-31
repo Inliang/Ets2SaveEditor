@@ -49,5 +49,19 @@ namespace Ets2SaveEditor.Services
         {
             System.Windows.MessageBox.Show(message, title, System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Error);
         }
+
+        /// <summary>
+        /// 是/否确认对话框（用于保存前确认档位/槽位等关键操作）。
+        /// 返回 true 表示用户选择「是」（确定），false 表示「否」（取消）。
+        /// </summary>
+        public bool Confirm(string message, string title = "确认")
+        {
+            var result = System.Windows.MessageBox.Show(
+                message,
+                title,
+                System.Windows.MessageBoxButton.YesNo,
+                System.Windows.MessageBoxImage.Warning);
+            return result == System.Windows.MessageBoxResult.Yes;
+        }
     }
 }

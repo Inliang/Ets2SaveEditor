@@ -4,6 +4,7 @@ using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Text;
 using System.Windows;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -356,10 +357,117 @@ namespace Ets2SaveEditor.ViewModels
             }
         }
 
+        /// <summary>
+        /// 从存档文件路径解析档位(profile)/槽位(slot)信息，用于保存前让用户确认
+        /// 正在编辑的是哪个槽，避免「编错槽」（这是与「格式」不同的另一根因维度）。
+        /// <para>
+        /// 标准路径形如 <c>.../profiles/&lt;profileHex&gt;/save/&lt;slot&gt;/game.sii</c>：
+        /// 槽位 = 紧邻 <c>game.sii</c> 的目录；档位 = 槽位再往上两级（即 profiles 下的目录）。
+        /// 解析失败或非标准路径时给出尽力而为的结果（缺失部分返回空串）。纯函数，不触碰磁盘。
+        /// </para>
+        /// </summary>
+        public static SaveSlotInfo ResolveSaveSlot(string path)
+        {
+            if (string.IsNullOrEmpty(path))
+            {
+                return new SaveSlotInfo(string.Empty, string.Empty);
+            }
+
+            string? containingDir = Path.GetDirectoryName(path);
+            if (string.IsNullOrEmpty(containingDir))
+            {
+                return new SaveSlotInfo(string.Empty, string.Empty);
+            }
+
+            string slot = Path.GetFileName(TrimTrailingSeparator(containingDir));
+
+            // 档位 = 槽位目录再往上两级（即 profiles 下的目录）。
+            string? parent = Path.GetDirectoryName(containingDir);
+            string? grandparent = parent == null ? null : Path.GetDirectoryName(parent);
+            string profileHex = string.IsNullOrEmpty(grandparent)
+                ? string.Empty
+                : Path.GetFileName(TrimTrailingSeparator(grandparent));
+
+            return new SaveSlotInfo(profileHex, slot);
+        }
+
+        /// <summary>把 profile 目录名（十六进制）解码为可读档位名；失败则返回原 hex。</summary>
+        public static string DecodeProfileName(string hex)
+        {
+            if (string.IsNullOrEmpty(hex)) return hex ?? string.Empty;
+            if (hex.Length % 2 != 0) return hex;
+
+            byte[] bytes = new byte[hex.Length / 2];
+            for (int i = 0; i < bytes.Length; i++)
+            {
+                if (!TryHexByte(hex, i * 2, out byte b)) return hex;
+                bytes[i] = b;
+            }
+
+            return Encoding.UTF8.GetString(bytes);
+        }
+
+        /// <summary>去掉路径末尾的目录分隔符，便于正确取末级目录名。</summary>
+        private static string TrimTrailingSeparator(string s)
+        {
+            return s.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        }
+
+        /// <summary>解析单个十六进制字节（0-9 / a-f / A-F）。</summary>
+        private static bool TryHexByte(string hex, int index, out byte value)
+        {
+            int hi = HexNibble(hex[index]);
+            int lo = HexNibble(hex[index + 1]);
+            if (hi < 0 || lo < 0)
+            {
+                value = 0;
+                return false;
+            }
+
+            value = (byte)((hi << 4) | lo);
+            return true;
+        }
+
+        private static int HexNibble(char c)
+        {
+            if (c >= '0' && c <= '9') return c - '0';
+            if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+            if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+            return -1;
+        }
+
+        /// <summary>
+        /// 存档档位/槽位解析结果。<see cref="ProfileHex"/> 为 profiles 下的十六进制目录名，
+        /// <see cref="ProfileName"/> 为解码后的可读档位名（解码失败则为原 hex）。
+        /// </summary>
+        public sealed record SaveSlotInfo(string ProfileHex, string Slot)
+        {
+            public string ProfileName => DecodeProfileName(ProfileHex);
+        }
+
         [RelayCommand]
         private void Save()
         {
             if (CurrentSave == null || !CurrentSave.IsLoaded) { _dialogs.ShowMessage("请先打开一个存档文件。"); return; }
+
+            // 保存前确认当前正在编辑的档位/槽位，避免用户改错槽（与「格式」是不同维度的根因）。
+            SaveSlotInfo slotInfo = ResolveSaveSlot(CurrentSave.Path);
+            string message = "你正在把修改写回到以下存档：\n" +
+                             "档位(profile)：" + slotInfo.ProfileName + "\n" +
+                             "槽位(slot)：" + slotInfo.Slot + "\n\n" +
+                             "确认保存到这个槽吗？";
+            if (string.Equals(slotInfo.Slot, "autosave", StringComparison.OrdinalIgnoreCase))
+            {
+                message += "\n\n⚠️ 这是自动存档槽。游戏『继续游戏』通常会读它，但游戏下次自动保存会用新内容覆盖它。" +
+                           "请确认这正是你要改的槽，避免改错槽导致『白改』。";
+            }
+
+            if (!_dialogs.Confirm(message, "确认保存位置"))
+            {
+                StatusText = "已取消保存（槽位确认被取消）";
+                return;
+            }
+
             try
             {
                 Profile.ApplyToModel();
