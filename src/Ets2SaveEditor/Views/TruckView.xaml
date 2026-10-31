@@ -30,6 +30,11 @@
                 <DataGridTextColumn Header="变速箱磨损" Binding="{Binding TransmissionWear, StringFormat=P0}" IsReadOnly="True" Width="100"/>
                 <DataGridTextColumn Header="驾驶室磨损" Binding="{Binding CabinWear, StringFormat=P0}" IsReadOnly="True" Width="100"/>
                 <DataGridTextColumn Header="轮胎磨损" Binding="{Binding WheelWear, StringFormat=P0}" IsReadOnly="True" Width="90"/>
+                <DataGridTextColumn Header="发动机不可修复" Binding="{Binding EngineWearUnfixable, StringFormat=P0}" IsReadOnly="True" Width="110"/>
+                <DataGridTextColumn Header="底盘不可修复" Binding="{Binding ChassisWearUnfixable, StringFormat=P0}" IsReadOnly="True" Width="110"/>
+                <DataGridTextColumn Header="变速箱不可修复" Binding="{Binding TransmissionWearUnfixable, StringFormat=P0}" IsReadOnly="True" Width="120"/>
+                <DataGridTextColumn Header="驾驶室不可修复" Binding="{Binding CabinWearUnfixable, StringFormat=P0}" IsReadOnly="True" Width="120"/>
+                <DataGridTextColumn Header="轮胎不可修复" Binding="{Binding WheelWearUnfixable, StringFormat=P0}" IsReadOnly="True" Width="110"/>
                 <DataGridTextColumn Header="剩余油量" Binding="{Binding Fuel, StringFormat=P0}" Width="90"/>
                 <DataGridTextColumn Header="里程(km)" Binding="{Binding Odometer}" IsReadOnly="True" Width="100"/>
                 <DataGridTemplateColumn Header="操作" Width="150">

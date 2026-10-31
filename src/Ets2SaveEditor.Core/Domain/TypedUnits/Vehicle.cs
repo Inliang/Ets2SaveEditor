@@ -124,6 +124,24 @@ namespace Ets2SaveEditor.Core.Domain.TypedUnits
         /// <summary>Chassis wear that cannot be repaired (0..1).</summary>
         public double ChassisWearUnfixable { get { return GetWear("chassis_wear_unfixable"); } set { SetWear("chassis_wear_unfixable", value); } }
 
+        /// <summary>
+        /// Average wheel wear that cannot be repaired (0..1), mirroring
+        /// <see cref="WheelWear"/> but reading <c>wheels_wear_unfixable</c>.
+        /// The game stores one value per wheel in the array.
+        /// </summary>
+        public double WheelWearUnfixable
+        {
+            get
+            {
+                var items = GetWearArray("wheels_wear_unfixable");
+                if (items.Count == 0) return 0;
+                double sum = 0;
+                foreach (var item in items) sum += item.AsDouble();
+                return sum / items.Count;
+            }
+            set { SetWearArray("wheels_wear_unfixable", value); }
+        }
+
         /// <summary>Remaining fuel as a relative value (0..1).</summary>
         public double Fuel
         {
@@ -195,6 +213,7 @@ namespace Ets2SaveEditor.Core.Domain.TypedUnits
         private void SetWear(string name, double value)
         {
             if (_unit == null) return;
+            if (_unit.GetAttribute(name) == null) return; // 仅当存档本就存在该字段才清零，避免凭空添加属性
             // 使用游戏自身的浮点写法：整数值写成整数，小数值写成 &xxxxxxxx。
             _unit.SetFloat(name, Clamp01(value));
         }
@@ -234,7 +253,7 @@ namespace Ets2SaveEditor.Core.Domain.TypedUnits
             return value < 0 ? 0 : (value > 1 ? 1 : value);
         }
 
-        /// <summary>Resets all repairable wear values to 0 (brand new).</summary>
+        /// <summary>Resets all truck wear (repairable + unfixable) to 0 (brand new).</summary>
         public void Repair()
         {
             EngineWear = 0;
@@ -242,6 +261,14 @@ namespace Ets2SaveEditor.Core.Domain.TypedUnits
             TransmissionWear = 0;
             CabinWear = 0;
             WheelWear = 0;
+
+            // 同时清零「不可修复」磨损：游戏受损度由 可修复+不可修复 两个桶共同决定。
+            // 只当存档里本就存在该字段时才清零（SetWear/SetWearArray 已含「存在才写」守卫）。
+            EngineWearUnfixable = 0;
+            TransmissionWearUnfixable = 0;
+            CabinWearUnfixable = 0;
+            ChassisWearUnfixable = 0;
+            WheelWearUnfixable = 0;
         }
 
         /// <summary>Fills the tank up (the game stores a relative fuel level).</summary>

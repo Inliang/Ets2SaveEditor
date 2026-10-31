@@ -99,6 +99,7 @@ namespace Ets2SaveEditor.Tests
             failures += TestSaveFormatMarker();
             failures += TestNullReference();
             failures += TestRealSave();
+            failures += TestRepairClearsUnfixable();
 
             Console.WriteLine(failures == 0 ? "ALL TESTS PASSED" : $"{failures} TEST(S) FAILED");
             return failures == 0 ? 0 : 1;
@@ -556,6 +557,210 @@ namespace Ets2SaveEditor.Tests
             bool intact = string.Equals(beforeHash, afterHash, StringComparison.Ordinal);
             Console.WriteLine($"[saverestore] realSaveIntact={intact}");
             if (!intact) { Console.WriteLine("FAIL: [saverestore] REAL SAVE WAS MODIFIED"); failures++; }
+
+            return failures;
+        }
+
+        /// <summary>
+        /// [repair] 复现并验证根因修复：修理时同时清零「不可修复(unfixable)」磨损。
+        /// <para>
+        /// (a) 确定性合成档（始终运行，绝不 SKIP）：构造一份 repairable 已为 0、
+        ///     unfixable 仍 &gt;0 的存档，复现「工具显示 0% 但游戏仍显受损」现象；
+        ///     Repair 后 reload 断言 unfixable 全部归零。若修复缺失，本段断言会失败。
+        /// (b) 实证真实存档（仅当 RealSavePath 存在时）：复制副本、前后 sha256 不变，
+        ///     对「修理前本就带 unfixable 属性」的车辆/挂车记录其值，Repair 后断言归零；
+        ///     若真实存档压根没有 unfixable 属性，则打印 NOTE 且不失败。
+        /// </para>
+        /// </summary>
+        private static int TestRepairClearsUnfixable()
+        {
+            int failures = 0;
+
+            // (a) 确定性合成部分 ─────────────────────────────────────────
+            // 复现用户真实存档现象：engine_wear 已是 0（工具据此说自己修好了），
+            // 但 engine_wear_unfixable 仍是 &3bbfd6b0（游戏据此仍显示约 9% 受损）。
+            // wheels_wear_unfixable 数组里至少有一个非零元素。
+            var sample =
+                "SiiNunit\n{\n" +
+                "economy : _nameless.0000 {\n experience_points: 5000\n}\n" +
+                "bank : _nameless.0001 {\n money_account: 100000\n}\n" +
+                "vehicle : _nameless.0003 {\n engine_wear: 0\n engine_wear_unfixable: &3bbfd6b0\n chassis_wear: 0\n chassis_wear_unfixable: 0\n fuel_relative: 1\n" +
+                "wheels_wear_unfixable: 2\n wheels_wear_unfixable[0]: &3bbfd6b0\n wheels_wear_unfixable[1]: 0\n}\n" +
+                "}\n";
+
+            string dir = CreateTempDir("repair");
+            string inPath = Path.Combine(dir, "repair.sii");
+            File.WriteAllText(inPath, sample);
+            string outPath = Path.Combine(dir, "repair.out.sii");
+
+            var sf = new SaveFile();
+            try
+            {
+                sf.Load(inPath);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("FAIL: [repair] synthetic load threw: " + ex.Message);
+                TryDelete(dir);
+                return failures + 1;
+            }
+
+            var vehicles = sf.GetVehicles();
+            bool foundVehicle = vehicles.Count > 0;
+            double uEngineBefore = -1;
+            double uWheelBefore = -1;
+            if (foundVehicle)
+            {
+                uEngineBefore = vehicles[0].Unit.GetDouble("engine_wear_unfixable");
+                var wheelItems = vehicles[0].Unit.GetArrayItems("wheels_wear_unfixable");
+                uWheelBefore = wheelItems.Count > 0 ? wheelItems[0].AsDouble() : -1;
+            }
+
+            foreach (var v in vehicles) v.Repair();
+            foreach (var t in sf.GetTrailers()) t.Repair();
+
+            try
+            {
+                sf.Save(outPath, false);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("FAIL: [repair] synthetic save threw: " + ex.Message);
+                TryDelete(dir);
+                return failures + 1;
+            }
+
+            var sf2 = new SaveFile();
+            try
+            {
+                sf2.Load(outPath);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("FAIL: [repair] synthetic reload threw: " + ex.Message);
+                TryDelete(dir);
+                return failures + 1;
+            }
+
+            var reloadedVehicles = sf2.GetVehicles();
+            bool engineUnfixZero = false;
+            bool allWheelUnfixZero = false;
+            if (reloadedVehicles.Count > 0)
+            {
+                var rv = reloadedVehicles[0];
+                engineUnfixZero = rv.Unit.GetDouble("engine_wear_unfixable") == 0;
+                allWheelUnfixZero = true;
+                foreach (var item in rv.Unit.GetArrayItems("wheels_wear_unfixable"))
+                {
+                    if (item.AsDouble() != 0) { allWheelUnfixZero = false; break; }
+                }
+            }
+            bool syntheticOk = reloadedVehicles.Count > 0 && engineUnfixZero && allWheelUnfixZero;
+            Console.WriteLine($"[repair] synthetic uEngineBefore={uEngineBefore} uWheelBefore={uWheelBefore} " +
+                              $"engineUnfixZero={engineUnfixZero} allWheelUnfixZero={allWheelUnfixZero}");
+            if (!foundVehicle) { Console.WriteLine("FAIL: [repair] synthetic vehicle not loaded"); failures++; }
+            if (!syntheticOk)
+            {
+                double dbg = reloadedVehicles.Count > 0 ? reloadedVehicles[0].Unit.GetDouble("engine_wear_unfixable") : -1;
+                Console.WriteLine("FAIL: [repair] unfixable wear not cleared after Repair (engine=" + dbg + ")");
+                failures++;
+            }
+
+            TryDelete(dir);
+
+            // (b) 实证真实存档（可选） ───────────────────────────────────
+            if (File.Exists(RealSavePath))
+            {
+                string beforeHash = Sha256(File.ReadAllBytes(RealSavePath));
+                string realDir = CreateTempDir("repair_real");
+                string copy = Path.Combine(realDir, "real_copy.sii");
+                File.Copy(RealSavePath, copy, true);
+
+                var rsf = new SaveFile();
+                try { rsf.Load(copy); }
+                catch (Exception ex)
+                {
+                    Console.WriteLine("FAIL: [repair] real load threw: " + ex.Message);
+                    TryDelete(realDir);
+                    return failures + 1;
+                }
+
+                string[] vehicleAttrs = { "engine_wear_unfixable", "transmission_wear_unfixable", "cabin_wear_unfixable", "chassis_wear_unfixable", "wheels_wear_unfixable" };
+                string[] trailerAttrs = { "trailer_body_wear_unfixable", "chassis_wear_unfixable", "wheels_wear_unfixable" };
+
+                var realVehicles = rsf.GetVehicles();
+                int vehWithUnfix = 0;
+                foreach (var v in realVehicles)
+                {
+                    foreach (var a in vehicleAttrs)
+                    {
+                        if (v.Unit.GetAttribute(a) != null) { vehWithUnfix++; break; }
+                    }
+                }
+                var realTrailers = rsf.GetTrailers();
+                int trWithUnfix = 0;
+                foreach (var t in realTrailers)
+                {
+                    foreach (var a in trailerAttrs)
+                    {
+                        if (t.Unit.GetAttribute(a) != null) { trWithUnfix++; break; }
+                    }
+                }
+
+                foreach (var v in realVehicles) v.Repair();
+                foreach (var t in realTrailers) t.Repair();
+
+                try { rsf.Save(copy, false); }
+                catch (Exception ex)
+                {
+                    Console.WriteLine("FAIL: [repair] real save threw: " + ex.Message);
+                    TryDelete(realDir);
+                    return failures + 1;
+                }
+
+                var rsf2 = new SaveFile();
+                try { rsf2.Load(copy); }
+                catch (Exception ex)
+                {
+                    Console.WriteLine("FAIL: [repair] real reload threw: " + ex.Message);
+                    TryDelete(realDir);
+                    return failures + 1;
+                }
+
+                bool allVehZero = true;
+                foreach (var v in rsf2.GetVehicles())
+                {
+                    foreach (var a in vehicleAttrs)
+                    {
+                        if (v.Unit.GetAttribute(a) != null && v.Unit.GetDouble(a) != 0) { allVehZero = false; break; }
+                    }
+                    if (!allVehZero) break;
+                }
+                bool allTrZero = true;
+                foreach (var t in rsf2.GetTrailers())
+                {
+                    foreach (var a in trailerAttrs)
+                    {
+                        if (t.Unit.GetAttribute(a) != null && t.Unit.GetDouble(a) != 0) { allTrZero = false; break; }
+                    }
+                    if (!allTrZero) break;
+                }
+
+                string afterHash = Sha256(File.ReadAllBytes(RealSavePath));
+                bool intact = string.Equals(beforeHash, afterHash, StringComparison.Ordinal);
+
+                Console.WriteLine($"[repair] real vehWithUnfix={vehWithUnfix} trWithUnfix={trWithUnfix} " +
+                                  $"allVehZero={allVehZero} allTrZero={allTrZero} realSaveIntact={intact}");
+                if (vehWithUnfix > 0 && !allVehZero) { Console.WriteLine("FAIL: [repair] real vehicle unfixable not all zero"); failures++; }
+                if (trWithUnfix > 0 && !allTrZero) { Console.WriteLine("FAIL: [repair] real trailer unfixable not all zero"); failures++; }
+                if (!intact) { Console.WriteLine("FAIL: [repair] REAL SAVE WAS MODIFIED"); failures++; }
+
+                TryDelete(realDir);
+            }
+            else
+            {
+                Console.WriteLine("[repair] NOTE: real save not found, empirical part skipped (synthetic part above is authoritative)");
+            }
 
             return failures;
         }

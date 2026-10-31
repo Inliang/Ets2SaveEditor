@@ -282,6 +282,38 @@ namespace Ets2SaveEditor.Core.Domain.TypedUnits
             set { if (_unit != null) SetWearArray("wheels_wear", value); }
         }
 
+        /// <summary>Body wear that cannot be repaired (0..1).</summary>
+        public double BodyWearUnfixable
+        {
+            get { return _unit != null ? _unit.GetDouble("trailer_body_wear_unfixable") : 0; }
+            set { if (_unit != null) SetWearValue(_unit, "trailer_body_wear_unfixable", value); }
+        }
+
+        /// <summary>Chassis wear that cannot be repaired (0..1).</summary>
+        public double ChassisWearUnfixable
+        {
+            get { return _unit != null ? _unit.GetDouble("chassis_wear_unfixable") : 0; }
+            set { if (_unit != null) SetWearValue(_unit, "chassis_wear_unfixable", value); }
+        }
+
+        /// <summary>
+        /// Average wheel wear that cannot be repaired (0..1), mirroring
+        /// <see cref="WheelWear"/> but reading <c>wheels_wear_unfixable</c>.
+        /// </summary>
+        public double WheelWearUnfixable
+        {
+            get
+            {
+                if (_unit == null) return 0;
+                var items = _unit.GetArrayItems("wheels_wear_unfixable");
+                if (items.Count == 0) return 0;
+                double sum = 0;
+                foreach (var item in items) sum += item.AsDouble();
+                return sum / items.Count;
+            }
+            set { if (_unit != null) SetWearArray("wheels_wear_unfixable", value); }
+        }
+
         /// <summary>Damage of the transported cargo (0..1).</summary>
         public double CargoDamage
         {
@@ -308,6 +340,8 @@ namespace Ets2SaveEditor.Core.Domain.TypedUnits
 
         private static void SetWearValue(SiiUnit unit, string name, double value)
         {
+            if (unit == null) return;
+            if (unit.GetAttribute(name) == null) return; // 仅当存档本就存在该字段才清零
             // 使用游戏自身的浮点写法：整数值写成整数，小数值写成 &xxxxxxxx。
             unit.SetFloat(name, Clamp01(value));
         }
@@ -327,12 +361,17 @@ namespace Ets2SaveEditor.Core.Domain.TypedUnits
             _unit.SetArrayItems(name, updated);
         }
 
-        /// <summary>Resets all repairable wear values to 0.</summary>
+        /// <summary>Resets all trailer wear (repairable + unfixable) to 0.</summary>
         public void Repair()
         {
             BodyWear = 0;
             ChassisWear = 0;
             WheelWear = 0;
+
+            // 同时清零「不可修复」磨损（存在才写，见 SetWearValue 守卫）。
+            BodyWearUnfixable = 0;
+            ChassisWearUnfixable = 0;
+            WheelWearUnfixable = 0;
         }
 
         public static List<Trailer> AllFromDocument(SiiDocument doc)
