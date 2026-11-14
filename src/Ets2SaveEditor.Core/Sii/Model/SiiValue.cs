@@ -61,22 +61,21 @@ namespace Ets2SaveEditor.Core.Sii.Model
 
         public override string ToSiiString()
         {
-            if (IsHex)
-            {
-                float single = (float)Value;
-                uint bits = BitConverter.ToUInt32(BitConverter.GetBytes(single), 0);
-                return "&" + bits.ToString("x8", CultureInfo.InvariantCulture);
-            }
-
             double v = Value;
-            if (!double.IsNaN(v) && !double.IsInfinity(v) &&
+
+            // 与游戏一致：非 hex 的整数值直接写成整数。
+            if (!IsHex && !double.IsNaN(v) && !double.IsInfinity(v) &&
                 v == Math.Floor(v) && Math.Abs(v) < 1e7)
             {
-                // 与游戏一致：整数值直接写成整数。
                 return ((long)v).ToString(CultureInfo.InvariantCulture);
             }
 
-            return v.ToString("R", CultureInfo.InvariantCulture);
+            // 其余情况（原本就是 hex、NaN/Inf、或任何非整数值）统一写成
+            // IEEE-754 单精度位模式 &xxxxxxxx。游戏从不写十进制小数，写了就读不回来，
+            // 因此这里永不输出 v.ToString("R") 之类的十进制文本。
+            float single = (float)v;
+            uint bits = BitConverter.ToUInt32(BitConverter.GetBytes(single), 0);
+            return "&" + bits.ToString("x8", CultureInfo.InvariantCulture);
         }
     }
 

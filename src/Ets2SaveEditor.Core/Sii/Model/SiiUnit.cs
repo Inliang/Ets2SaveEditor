@@ -160,16 +160,14 @@ namespace Ets2SaveEditor.Core.Sii.Model
         public void SetScalar(string name, long? value) => SetAttribute(name, new IntValue(value ?? 0));
 
         /// <summary>
-        /// Writes a floating point value. When the current value uses the game's
-        /// hexadecimal notation the notation is preserved, so the save file keeps
-        /// the exact same representation.
+        /// Writes a floating point value using the representation the game
+        /// itself accepts: integral values as plain integers, fractional values
+        /// as IEEE-754 bit patterns (<c>&amp;xxxxxxxx</c>). Delegates to
+        /// <see cref="SetFloat"/> so a non-hex <see cref="FloatValue"/> can never
+        /// leak a decimal fraction (<c>0.25</c>) into the save file — the game
+        /// never writes those and cannot read them back.
         /// </summary>
-        public void SetScalar(string name, double value)
-        {
-            var existing = GetAttribute(name);
-            bool isHex = existing != null && existing.Value is FloatValue current && current.IsHex;
-            SetAttribute(name, new FloatValue(value, isHex));
-        }
+        public void SetScalar(string name, double value) => SetFloat(name, value);
 
         /// <summary>
         /// Writes a float attribute using the representation the game itself

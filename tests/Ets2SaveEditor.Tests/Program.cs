@@ -100,6 +100,7 @@ namespace Ets2SaveEditor.Tests
             failures += TestNullReference();
             failures += TestRealSave();
             failures += TestRepairClearsUnfixable();
+            failures += TestSlotPick();
 
             Console.WriteLine(failures == 0 ? "ALL TESTS PASSED" : $"{failures} TEST(S) FAILED");
             return failures == 0 ? 0 : 1;
@@ -300,7 +301,8 @@ namespace Ets2SaveEditor.Tests
 
             // 覆盖加密源文件时必须强制备份（即使 backup=false），且保存后应写回
             // 明文 SiiNunit（而非仍加密）—— 这是修复「改了但游戏里没改」的关键：
-            // 明文游戏不做 HMAC 校验可直接读取，下次自动保存时再重新加密。
+            // 一律写明文 SiiNunit：社区长期实测的经验性兼容（SCS 论坛 2024-05-20 实测），
+            // 须游戏已完全重启、且该存档未被本次会话缓存读过才生效。
             string saveTarget = Path.Combine(dir, "scsc_save.sii");
             File.Copy(path, saveTarget, true);
             var sfSave = new SaveFile();
@@ -3603,9 +3605,9 @@ namespace Ets2SaveEditor.Tests
         /// 背景：本工具保存时写出的是**明文** SII，而原始加密存档不可再生（HMAC 密钥
         /// 未公开）—— 一旦有程序往真实存档上写了哪怕一把，用户的加密原档就被明文顶替了。
         /// 而**即使程序本身不调用保存，只要它加载了真实存档并渲染界面，就存在触发写入的
-        /// 路径**：不能依赖「我知道它不会写」。真实存档目录里那两份 5.3 MB 的明文
-        /// <c>game_backup.sii</c>（游戏自己保存时的旧档备份）说明这套存档历史上被以明文
-        /// 形式覆盖过，自动化程序误用真实存档是**真实存在的口子**（离屏渲染 / 截图工具
+        /// 路径**：不能依赖「我知道它不会写」。真实存档目录里已有的明文存档样本
+        /// <c>game_backup.sii</c> 说明这套存档历史上被以明文形式覆盖过，
+        /// 自动化程序误用真实存档是**真实存在的口子**（离屏渲染 / 截图工具
         /// 最容易踩）。所以这条约束要由机器保证，而不是靠自觉。
         /// </para>
         /// <para>
@@ -4262,6 +4264,206 @@ namespace Ets2SaveEditor.Tests
                     failures++;
                 }
             }
+
+            return failures;
+        }
+
+        // ------------------------------------------------------------------
+        // [slotpick] v0.0.17：默认槽智能选择 / 游戏日志 / 进程检测 /
+        // 元数据守卫 / 浮点写入防御（永不输出十进制小数）。
+        // ------------------------------------------------------------------
+
+        /// <summary>
+        /// 只把「数字.数字」形态的十进制小数判为命中；token 里的点
+        /// （<c>_nameless.0001</c> / <c>cargo.haulie</c>）不算小数。
+        /// </summary>
+        private static bool SlotPickHasDecimalFraction(string text)
+        {
+            return Regex.IsMatch(text ?? string.Empty, @"(?<![\w.])\d+\.\d+(?![\w.])");
+        }
+
+        /// <summary>[slotpick] 综合测试组；返回本组失败数。</summary>
+        private static int TestSlotPick()
+        {
+            int failures = 0;
+
+            // ---- 1) PickDefaultSlot 四级优先级 ----
+            var t0 = new DateTime(2026, 11, 10, 8, 0, 0);
+            var t1 = new DateTime(2026, 11, 11, 8, 0, 0);
+            var t2 = new DateTime(2026, 11, 14, 20, 22, 0);
+
+            // 合成槽位集合：1 / autosave / quicksave / autosave_drive_9。
+            // 无标记、无 mtime：应选中槽名恰为 autosave 的槽（优先级 2）。
+            var plain = new List<SaveSlot>
+            {
+                new SaveSlot { SlotName = "1" },
+                new SaveSlot { SlotName = "autosave" },
+                new SaveSlot { SlotName = "quicksave" },
+                new SaveSlot { SlotName = "autosave_drive_9" }
+            };
+            SaveSlot? d2 = MainViewModel.PickDefaultSlot(plain);
+            bool level2Ok = d2 != null && d2.SlotName == "autosave";
+            // 负向断言：没有任何标记时，不应再退回到字典序第一的 "1"。
+            bool negativeNotOne = d2 != null && d2.SlotName != "1";
+
+            // 优先级 1：IsLastLoaded 压过 autosave 与更新的 mtime。
+            var marked = new List<SaveSlot>
+            {
+                new SaveSlot { SlotName = "1", IsLastLoaded = true, LastWriteTime = t0 },
+                new SaveSlot { SlotName = "autosave", LastWriteTime = t2 },
+                new SaveSlot { SlotName = "quicksave", LastWriteTime = t1 }
+            };
+            SaveSlot? d1 = MainViewModel.PickDefaultSlot(marked);
+            bool level1Ok = d1 != null && d1.SlotName == "1";
+
+            // 优先级 3：无标记、也无「恰为 autosave」的槽时，mtime 最新者胜出。
+            // autosave_drive_9 只是以 autosave 开头，不应命中优先级 2。
+            var byTime = new List<SaveSlot>
+            {
+                new SaveSlot { SlotName = "1", LastWriteTime = t0 },
+                new SaveSlot { SlotName = "autosave_drive_9", LastWriteTime = t1 },
+                new SaveSlot { SlotName = "quicksave", LastWriteTime = t2 }
+            };
+            SaveSlot? d3 = MainViewModel.PickDefaultSlot(byTime);
+            bool level3Ok = d3 != null && d3.SlotName == "quicksave";
+
+            // 优先级 4：全部无 mtime 时按字典序第一。
+            var byName = new List<SaveSlot>
+            {
+                new SaveSlot { SlotName = "quicksave" },
+                new SaveSlot { SlotName = "9" },
+                new SaveSlot { SlotName = "2" }
+            };
+            SaveSlot? d4 = MainViewModel.PickDefaultSlot(byName);
+            bool level4Ok = d4 != null && d4.SlotName == "2";
+
+            bool emptyOk = MainViewModel.PickDefaultSlot(new List<SaveSlot>()) == null;
+            Console.WriteLine($"[slotpick] priority level1={level1Ok} level2={level2Ok} level3={level3Ok} " +
+                              $"level4={level4Ok} negativeNotOne={negativeNotOne} emptyOk={emptyOk}");
+            if (!level1Ok) { Console.WriteLine("FAIL: [slotpick] IsLastLoaded priority broken"); failures++; }
+            if (!level2Ok) { Console.WriteLine("FAIL: [slotpick] exact autosave priority broken"); failures++; }
+            if (!level3Ok) { Console.WriteLine("FAIL: [slotpick] LastWriteTime priority broken"); failures++; }
+            if (!level4Ok) { Console.WriteLine("FAIL: [slotpick] lexical fallback broken"); failures++; }
+            if (!negativeNotOne) { Console.WriteLine("FAIL: [slotpick] negative assertion: unmarked slots fell back to '1'"); failures++; }
+            if (!emptyOk) { Console.WriteLine("FAIL: [slotpick] empty collection should return null"); failures++; }
+
+            // ---- 2) GameLogReader.FindLastLoaded ----
+            string logDir = CreateTempDir("slotpick_log");
+            string logPath = Path.Combine(logDir, "game.log.txt");
+            File.WriteAllText(logPath,
+                "00:00:01.000 : some unrelated noise\n" +
+                "00:00:02.000 : Loading save. path: <MEMFILE><UFS>/home/profiles/4142/save/1/game.sii\n" +
+                "00:00:03.000 : still noise\n" +
+                "00:00:04.000 : Loading save. path: <MEMFILE><UFS>/home/profiles/4361726F6C696E65E4B8B6/save/autosave/game.sii\n");
+            LastLoadedSave? last = GameLogReader.FindLastLoaded(logPath);
+            bool lastOk = last != null &&
+                          last.ProfileHex == "4361726F6C696E65E4B8B6" &&
+                          last.SlotName == "autosave";
+            bool missingOk = GameLogReader.FindLastLoaded(Path.Combine(logDir, "does_not_exist.txt")) == null;
+            string noMatchLog = Path.Combine(logDir, "nomatch.txt");
+            File.WriteAllText(noMatchLog, "00:00:01.000 : doing unrelated things\n");
+            bool noMatchOk = GameLogReader.FindLastLoaded(noMatchLog) == null;
+            string malformedLog = Path.Combine(logDir, "malformed.txt");
+            File.WriteAllText(malformedLog,
+                "00:00:01.000 : Loading save. path: total garbage without any save path\n");
+            bool malformedOk = GameLogReader.FindLastLoaded(malformedLog) == null;
+            Console.WriteLine($"[slotpick] lastLoaded={lastOk} missingLog={missingOk} noMatch={noMatchOk} malformed={malformedOk}");
+            if (!lastOk) { Console.WriteLine("FAIL: [slotpick] GameLogReader did not return the LAST Loading save line"); failures++; }
+            if (!missingOk) { Console.WriteLine("FAIL: [slotpick] missing log should return null"); failures++; }
+            if (!noMatchOk) { Console.WriteLine("FAIL: [slotpick] log without Loading save should return null"); failures++; }
+            if (!malformedOk) { Console.WriteLine("FAIL: [slotpick] malformed path should return null"); failures++; }
+
+            // ---- 3) IsGameRunning（合成进程名列表）----
+            bool hitEts2 = MainViewModel.IsGameRunning(new[] { "notepad", "eurotrucks2", "explorer" });
+            bool hitAts = MainViewModel.IsGameRunning(new[] { "AMTRUCKS2" });   // 大小写不敏感
+            bool miss = !MainViewModel.IsGameRunning(new[] { "notepad", "explorer", "devenv" });
+            bool missEmpty = !MainViewModel.IsGameRunning(Array.Empty<string>());
+            bool missNulls = !MainViewModel.IsGameRunning(new string[] { null!, "explorer" });
+            Console.WriteLine($"[slotpick] gameRunning hitEts2={hitEts2} hitAts={hitAts} miss={miss} " +
+                              $"missEmpty={missEmpty} missNulls={missNulls}");
+            if (!hitEts2 || !hitAts) { Console.WriteLine("FAIL: [slotpick] IsGameRunning did not detect game process"); failures++; }
+            if (!miss || !missEmpty || !missNulls) { Console.WriteLine("FAIL: [slotpick] IsGameRunning false positive on non-game names"); failures++; }
+
+            // ---- 4) TryReadSaveName（明文 SiiNunit 与 ScsC 容器两种）----
+            string nameDir = CreateTempDir("slotpick_info_plain");
+            const string infoText = "SiiNunit\n{\nsave_container : _nameless.0000 {\n name: \"2026.11.13\"\n}\n}\n";
+            File.WriteAllText(Path.Combine(nameDir, "info.sii"), infoText);
+            bool plainNameOk = SaveLocationFinder.TryReadSaveName(nameDir, out string plainName) &&
+                               plainName == "2026.11.13";
+
+            string encDir = CreateTempDir("slotpick_info_scsc");
+            File.WriteAllBytes(Path.Combine(encDir, "info.sii"),
+                BuildScsCContainer(infoText, out int _));
+            bool encNameOk = SaveLocationFinder.TryReadSaveName(encDir, out string encName) &&
+                             encName == "2026.11.13";
+            bool nameMissingOk = !SaveLocationFinder.TryReadSaveName(Path.Combine(logDir, "no_such_slot"), out _);
+            Console.WriteLine($"[slotpick] saveName plaintext={plainNameOk} scsc={encNameOk} missing={nameMissingOk} ('{plainName}')");
+            if (!plainNameOk) { Console.WriteLine("FAIL: [slotpick] TryReadSaveName failed on plaintext info.sii"); failures++; }
+            if (!encNameOk) { Console.WriteLine("FAIL: [slotpick] TryReadSaveName failed on ScsC info.sii"); failures++; }
+            if (!nameMissingOk) { Console.WriteLine("FAIL: [slotpick] TryReadSaveName should fail on missing slot"); failures++; }
+
+            // ---- 5) 元数据 / 备份文件守卫 ----
+            string guardDir = CreateTempDir("slotpick_guard");
+            string good = Path.Combine(guardDir, "game.sii");
+            File.WriteAllText(good, "SiiNunit\n{\n}\n");
+            string info = Path.Combine(guardDir, "info.sii");
+            File.WriteAllText(info, "x");
+            string backup = Path.Combine(guardDir, "game.sii.bak.20261114");
+            File.WriteAllText(backup, "x");
+            string zeroDir = CreateTempDir("slotpick_guard_zero");
+            string zero = Path.Combine(zeroDir, "game.sii");
+            File.WriteAllText(zero, string.Empty);
+            bool guardOk = MainViewModel.IsEditableSaveFile(good) &&
+                           !MainViewModel.IsEditableSaveFile(info) &&
+                           !MainViewModel.IsEditableSaveFile(backup) &&
+                           !MainViewModel.IsEditableSaveFile(zero);
+            Console.WriteLine($"[slotpick] editableFileGuard={guardOk}");
+            if (!guardOk) { Console.WriteLine("FAIL: [slotpick] metadata/backup/zero-byte files must not be loadable"); failures++; }
+
+            // ---- 6) 浮点写入防御：永不输出十进制小数 ----
+            const string floatSample =
+                "SiiNunit\n{\n" +
+                "vehicle : _nameless.0001 {\n engine_wear: 0\n engine_wear_unfixable: &3bbfd6b0\n}\n" +
+                "}\n";
+            SiiDocument floatDoc = SiiParser.Parse(floatSample);
+            SiiUnit? vehicle = floatDoc.GetUnitById("_nameless.0001");
+            bool vehicleFound = vehicle != null;
+            if (vehicle != null)
+            {
+                // 旧实现：SetScalar(double) 会写出 engine_wear: 0.25（十进制）。
+                vehicle.SetScalar("engine_wear", 0.25);
+                vehicle.SetFloat("engine_wear_unfixable", 0.25);
+            }
+            string serialized = SiiSerializer.Serialize(floatDoc);
+            bool noDecimal = vehicleFound && !SlotPickHasDecimalFraction(serialized);
+            bool hasHexFloat = serialized.IndexOf("&3e800000", StringComparison.OrdinalIgnoreCase) >= 0;
+            // 整数值仍写整数（保留既有逻辑），非 hex 的 FloatValue 也不再回退成十进制。
+            bool integerStillInt = new FloatValue(5.0, false).ToSiiString() == "5";
+            string nonHexRender = new FloatValue(0.25, false).ToSiiString();
+            bool nonHexNotDecimal = nonHexRender != "0.25" && nonHexRender.StartsWith("&", StringComparison.Ordinal);
+            // 负向断言：证明本测试的「十进制小数」检查逻辑确实能捕获旧行为，
+            // 而不是一个恒真/恒假的空断言。喂进一段旧实现会产生的文本，必须被判为命中。
+            bool guardCatchesOld = SlotPickHasDecimalFraction("engine_wear: 0.25");
+            Console.WriteLine($"[slotpick] float noDecimal={noDecimal} hasHexFloat={hasHexFloat} " +
+                              $"integerStillInt={integerStillInt} nonHexNotDecimal={nonHexNotDecimal} " +
+                              $"guardCatchesOld={guardCatchesOld}");
+            if (!vehicleFound) { Console.WriteLine("FAIL: [slotpick] synthetic vehicle unit not parsed"); failures++; }
+            if (!noDecimal) { Console.WriteLine("FAIL: [slotpick] serialized output contains a decimal fraction"); failures++; }
+            if (!hasHexFloat) { Console.WriteLine("FAIL: [slotpick] 0.25 was not written as &3e800000 hex float"); failures++; }
+            if (!integerStillInt) { Console.WriteLine("FAIL: [slotpick] integer float value should stay an integer"); failures++; }
+            if (!nonHexNotDecimal) { Console.WriteLine("FAIL: [slotpick] negative assertion: non-hex FloatValue leaked decimal text"); failures++; }
+            if (!guardCatchesOld) { Console.WriteLine("FAIL: [slotpick] negative assertion: decimal-fraction guard cannot catch old behaviour"); failures++; }
+
+            // ---- 7) 保存成功提示必须完整展示五步指引（不能只放一句）----
+            string saveMsg = new MainViewModel().BuildSaveMessage();
+            bool fiveStepsOk = saveMsg.Contains("1)") && saveMsg.Contains("2)") &&
+                               saveMsg.Contains("3)") && saveMsg.Contains("4)") &&
+                               saveMsg.Contains("5)") &&
+                               saveMsg.Contains("完全退出游戏进程") &&
+                               saveMsg.Contains("Show autosaves") &&
+                               saveMsg.Contains("Steam Cloud");
+            Console.WriteLine($"[slotpick] buildSaveMessageFiveSteps={fiveStepsOk}");
+            if (!fiveStepsOk) { Console.WriteLine("FAIL: [slotpick] BuildSaveMessage must show the full five-step guide"); failures++; }
 
             return failures;
         }

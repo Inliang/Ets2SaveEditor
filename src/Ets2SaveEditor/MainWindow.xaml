@@ -59,8 +59,10 @@
                            ToolTip="{Binding LoadedPathText}"/>
 
                 <!-- 存档格式标记：保存时统一写回**明文 SiiNunit**（无论原存档是加密 ScsC /
-                     zlib / 二进制 / 明文），游戏不校验 HMAC、可直接读取修改后的内容，并在下次
-                     自动保存时重新加密成 ScsC。原加密档覆盖前会强制备份。用 AccentBrush 区分显示，不用刺眼红色。 -->
+                     zlib / 二进制 / 明文）。明文改值生效是社区长期实测的经验性兼容
+                     （SCS 论坛 2024-05-20 主 game.sii 明文改值生效实测），并非 SCS 官方既定行为；
+                     前提是游戏已完全重启、且该存档未被本次会话缓存读过（ETS2 1.50+ 缓存）。
+                     原加密档覆盖前会强制备份。用 AccentBrush 区分显示，不用刺眼红色。 -->
                 <TextBlock x:Name="TbxSaveFormat" Grid.Column="2" Text="{Binding SaveFormatText}"
                            VerticalAlignment="Center" Margin="10,0,0,0"
                            Foreground="{StaticResource AccentBrush}" FontWeight="SemiBold"
@@ -182,7 +184,7 @@
 
                                 <!-- 存档槽选择 -->
                                 <ComboBox ItemsSource="{Binding Slots}" SelectedItem="{Binding SelectedSlot}"
-                                          DisplayMemberPath="SlotName" Margin="0,0,0,8"/>
+                                          DisplayMemberPath="Display" Margin="0,0,0,8"/>
 
                                 <!-- 备份开关 -->
                                 <CheckBox Content="保存前自动备份" IsChecked="{Binding Settings.AutoBackup, Mode=TwoWay}"

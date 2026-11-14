@@ -16,8 +16,8 @@ namespace Ets2SaveEditor.Core.Sii
     /// blocks... "BSII" blockType == 0 → 结构定义块
     ///          "BSII" blockType != 0 → 数据块（blockType 即 structureId）
     /// </code>
-    /// The produced text is byte-for-byte compatible with the plaintext SII that
-    /// the game itself writes (see <c>game_backup.sii</c>):
+    /// The produced text is byte-for-byte compatible with an existing plaintext
+    /// SII save sample (see <c>game_backup.sii</c>):
     /// <list type="bullet">
     ///   <item><description>unit header: <c>name : id {</c></description></item>
     ///   <item><description>attribute: <c>name: value</c>（冒号前无空格）</description></item>

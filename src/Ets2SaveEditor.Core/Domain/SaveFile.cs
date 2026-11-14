@@ -21,9 +21,8 @@ namespace Ets2SaveEditor.Core.Domain
 
         /// <summary>
         /// Container format currently on disk. After <see cref="Save"/> it is
-        /// always <see cref="SiiFormat.Plaintext"/> because saves are written
-        /// back as plaintext <c>SiiNunit</c> (the game re-encrypts on its next
-        /// autosave). Before saving it matches <see cref="LoadedFormat"/>.
+        /// always <see cref="SiiFormat.Plaintext"/>，因为 v0.0.16 起一律写回
+        /// 明文 <c>SiiNunit</c> 文本；保存前与 <see cref="LoadedFormat"/> 一致。
         /// </summary>
         public SiiFormat Format { get; set; }
 
@@ -31,10 +30,13 @@ namespace Ets2SaveEditor.Core.Domain
         /// Container format the file had when it was loaded. Provided for
         /// display/informational purposes only — it no longer influences how
         /// the document is written. Saves are always written back as plaintext
-        /// <c>SiiNunit</c> (see <see cref="Save"/>): the game reads plaintext
-        /// without performing an HMAC check and re-encrypts the file on its
-        /// next autosave. An encrypted ScsC save is therefore written back as
-        /// plaintext, not as an encrypted ScsC save.
+        /// <c>SiiNunit</c> 文本 (see <see cref="Save"/>)，加密 ScsC 源档也不例外。
+        /// <para>
+        /// 明文改值能被游戏读到，是社区长期实测有效的经验性兼容（SCS 论坛
+        /// 2024-05-20 有「主 game.sii 解密成明文 → 改值 → 加载生效」的直接实测），
+        /// 并非 SCS 官方承诺的既定行为；其前提是游戏已完全重启、且该存档
+        /// 未被本次会话缓存读过（ETS2 1.50+ filesystem cache）。
+        /// </para>
         /// </summary>
         public SiiFormat LoadedFormat { get; private set; }
 
@@ -129,13 +131,18 @@ namespace Ets2SaveEditor.Core.Domain
         /// <para>
         /// The document is <b>always written back as plaintext <c>SiiNunit</c>
         /// text</b>, regardless of how it was originally stored (encrypted
-        /// ScsC, zlib, binary or already plaintext). The game does not perform
-        /// an HMAC check on plaintext saves and reads them directly; it then
-        /// re-encrypts the file on its next autosave. Re-encoding an edited
+        /// ScsC, zlib, binary or already plaintext). Re-encoding an edited
         /// ScsC container with the original HMAC/IV would produce an invalid
         /// HMAC (the key is not public), causing the game to silently fall back
         /// to <c>profile.bak.sii</c> and discard every edit — so plaintext
         /// write-back is the only correct approach for an external editor.
+        /// </para>
+        /// <para>
+        /// 明文改值生效是社区长期实测有效的经验性兼容（SCS 论坛 2024-05-20
+        /// 主 game.sii 明文改值生效实测），并非 SCS 官方既定事实；前提是
+        /// 游戏已完全重启、且该存档未被本次会话缓存读过。官方缓存帖未提 HMAC，
+        /// HMAC 密钥与算法均未公开，因此这里不对「游戏读明文不校验 HMAC」或
+        /// 「下次自动保存会重新加密」作任何官方保证。
         /// </para>
         /// <para>
         /// When the target file is (or was) an encrypted container, a
@@ -171,10 +178,14 @@ namespace Ets2SaveEditor.Core.Domain
 
             // 关键：无论原存档是加密(ScsC)/zlib/二进制/明文，保存时一律写回**明文 SiiNunit**。
             // ScsC 容器的 HMAC 密钥由 SCS 保密，外部工具无法为改动后的内容生成合法 HMAC；
-            // 若原样写回加密容器（复用旧 HMAC/IV），游戏加载时 HMAC 校验失败会静默回退到
-            // profile.bak.sii，导致所有修改不生效。明文 SiiNunit 游戏不做 HMAC 校验、可直接读取，
-            // 并在下次自动保存时用合法 HMAC 重新加密成 ScsC（业界 SII_Decrypt / easy-scsmodmanager
-            // 等公认做法）。
+            // 若原样写回加密容器（复用旧 HMAC/IV），改动后的内容与旧 HMAC 不匹配，
+            // 游戏可能拒绝加载并回退到 profile.bak.sii，导致所有修改不生效。
+            // 全部同类工具都写明文、不重新加密、不重算 HMAC。
+            // 明文改值生效是社区长期实测的经验性兼容（SCS 论坛 2024-05-20 主 game.sii
+            // 明文改值生效实测），并非 SCS 官方既定行为；须游戏已完全重启、且该存档
+            // 未被本次会话缓存读过（ETS2 1.50+ filesystem cache），否则即使磁盘写对了
+            // 游戏里也看不到变化。注：「下次自动保存会用合法 HMAC 重新加密成 ScsC」
+            // 同样只是社区经验，且只在上述前提成立、游戏确实重新写盘时才会发生。
             SiiFormat targetFormat = SiiFormat.Plaintext;
 
             try

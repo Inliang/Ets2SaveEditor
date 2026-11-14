@@ -1,8 +1,10 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Text;
+using Ets2SaveEditor.Core.Sii;
 
 namespace Ets2SaveEditor.Core.Persistence
 {
@@ -26,12 +28,52 @@ namespace Ets2SaveEditor.Core.Persistence
         /// <summary>Whether this slot was discovered via Steam (vs local documents).</summary>
         public bool IsSteam { get; set; }
 
-        /// <summary>Human-friendly label for list boxes.</summary>
-        public string Display => $"[{Game}] {ProfileId} / {SlotName}" + (IsSteam ? " (Steam)" : "");
+        /// <summary>槽位下 <c>game.sii</c> 的最后修改时间；取不到时为 <see cref="DateTime.MinValue"/>。</summary>
+        public DateTime LastWriteTime { get; set; } = DateTime.MinValue;
+
+        /// <summary>同槽 <c>info.sii</c> 里 <c>name:</c> 字段的内容（例如 "2026.11.13"），取不到为空串。</summary>
+        public string SaveName { get; set; } = string.Empty;
+
+        /// <summary>是否为游戏日志里最后一次加载的存档槽（由 <c>GameLogReader</c> 标记）。</summary>
+        public bool IsLastLoaded { get; set; }
+
+        /// <summary>槽名是否以 <c>autosave</c> 开头（含 autosave_drive_* 一类）。</summary>
+        public bool IsAutoSave { get; set; }
+
+        /// <summary>槽位类型的可读标签。</summary>
+        private string TypeLabel
+        {
+            get
+            {
+                if (string.Equals(SlotName, "autosave", StringComparison.OrdinalIgnoreCase)) return "游戏继续游戏读取";
+                if (string.Equals(SlotName, "quicksave", StringComparison.OrdinalIgnoreCase)) return "快速存档";
+                if (SlotName != null && SlotName.StartsWith("autosave_drive", StringComparison.OrdinalIgnoreCase)) return "自动驾驶存档";
+                return "手动存档";
+            }
+        }
 
         /// <summary>
-        /// 存档槽名称。列表/下拉框中直接显示存档槽名即可，
-        /// 因为同一个档案下的存档槽名唯一。
+        /// 可读的槽位标签：槽名 + 类型标签 + 时间 + 存档名（+ 上次加载标记 / Steam），
+        /// 例如 <c>autosave · 游戏继续游戏读取 · 11-14 20:22</c>。
+        /// </summary>
+        public string Display
+        {
+            get
+            {
+                string time = LastWriteTime == DateTime.MinValue
+                    ? "时间未知"
+                    : LastWriteTime.ToString("MM-dd HH:mm", CultureInfo.InvariantCulture);
+                string label = $"{SlotName} · {TypeLabel} · {time}";
+                if (!string.IsNullOrEmpty(SaveName)) label += " · " + SaveName;
+                if (IsLastLoaded) label += " · 游戏上次加载（已默认选中）";
+                if (IsSteam) label += " · Steam";
+                return label;
+            }
+        }
+
+        /// <summary>
+        /// 返回纯槽名。下拉框已改用可读的 <see cref="Display"/>；
+        /// 这里保留纯槽名返回值，供其它仍依赖 <c>ToString()</c> 的调用方使用。
         /// </summary>
         public override string ToString() => SlotName;
 
@@ -147,13 +189,32 @@ namespace Ets2SaveEditor.Core.Persistence
 
                     foreach (var slotDir in Directory.GetDirectories(saveRoot))
                     {
+                        string slotName = Path.GetFileName(slotDir);
+
+                        // 槽位元数据：game.sii 的 mtime（默认选中优先级用），info.sii 的 name。
+                        DateTime lastWrite = DateTime.MinValue;
+                        try
+                        {
+                            string gameSii = Path.Combine(slotDir, "game.sii");
+                            if (File.Exists(gameSii)) lastWrite = File.GetLastWriteTime(gameSii);
+                        }
+                        catch
+                        {
+                            // 尽力而为，取不到时间就保持 MinValue。
+                        }
+                        TryReadSaveName(slotDir, out string saveName);
+
                         result.Add(new SaveSlot
                         {
                             Game = game,
                             ProfileId = profileId,
-                            SlotName = Path.GetFileName(slotDir),
+                            SlotName = slotName,
                             FullPath = slotDir,
-                            IsSteam = isSteam
+                            IsSteam = isSteam,
+                            LastWriteTime = lastWrite,
+                            SaveName = saveName,
+                            IsAutoSave = slotName.StartsWith("autosave", StringComparison.OrdinalIgnoreCase),
+                            IsLastLoaded = false
                         });
                     }
                 }
@@ -161,6 +222,50 @@ namespace Ets2SaveEditor.Core.Persistence
             catch
             {
                 // Ignore inaccessible directories.
+            }
+        }
+
+        /// <summary>
+        /// 尽力而为地读取槽位目录里 <c>info.sii</c> 的 <c>name: "..."</c> 字段
+        /// （例如 "2026.11.13"），用于帮用户在游戏菜单里对上存档名。
+        /// 兼容 <c>ScsC</c> 加密容器与明文 <c>SiiNunit</c> 两种 info.sii；
+        /// 任何异常、文件缺失或找不到字段都返回 false，绝不抛异常。
+        /// </summary>
+        public static bool TryReadSaveName(string slotPath, out string name)
+        {
+            name = string.Empty;
+            try
+            {
+                if (string.IsNullOrEmpty(slotPath)) return false;
+                string infoPath = Path.Combine(slotPath, "info.sii");
+                if (!File.Exists(infoPath)) return false;
+
+                byte[] raw = File.ReadAllBytes(infoPath);
+                SiiFormat format = SiiFormatDetector.Detect(raw);
+                string text = SiiFormatDetector.Decode(raw, format);
+                if (string.IsNullOrEmpty(text)) return false;
+
+                foreach (string rawLine in text.Split('\n'))
+                {
+                    string line = rawLine.Trim();
+                    if (!line.StartsWith("name:", StringComparison.OrdinalIgnoreCase)) continue;
+                    string value = line.Substring("name:".Length).Trim();
+                    if (value.Length >= 2 && value[0] == '"' && value[value.Length - 1] == '"')
+                    {
+                        name = value.Substring(1, value.Length - 2);
+                    }
+                    else
+                    {
+                        name = value;
+                    }
+                    return !string.IsNullOrEmpty(name);
+                }
+                return false;
+            }
+            catch
+            {
+                name = string.Empty;
+                return false;
             }
         }
 
