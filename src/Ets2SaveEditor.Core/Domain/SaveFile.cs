@@ -142,7 +142,8 @@ namespace Ets2SaveEditor.Core.Domain
         /// 主 game.sii 明文改值生效实测），并非 SCS 官方既定事实；前提是
         /// 游戏已完全重启、且该存档未被本次会话缓存读过。官方缓存帖未提 HMAC，
         /// HMAC 密钥与算法均未公开，因此这里不对「游戏读明文不校验 HMAC」或
-        /// 「下次自动保存会重新加密」作任何官方保证。
+        /// 「下次自动保存会重新加密」作任何官方保证；后者仅当游戏确实读到该
+        /// 明文文件、并在之后重新写盘时才可能发生。
         /// </para>
         /// <para>
         /// When the target file is (or was) an encrypted container, a
@@ -185,7 +186,7 @@ namespace Ets2SaveEditor.Core.Domain
             // 明文改值生效实测），并非 SCS 官方既定行为；须游戏已完全重启、且该存档
             // 未被本次会话缓存读过（ETS2 1.50+ filesystem cache），否则即使磁盘写对了
             // 游戏里也看不到变化。注：「下次自动保存会用合法 HMAC 重新加密成 ScsC」
-            // 同样只是社区经验，且只在上述前提成立、游戏确实重新写盘时才会发生。
+            // 同样只是社区经验，仅当游戏确实读到该明文文件、并在之后重新写盘时才会发生。
             SiiFormat targetFormat = SiiFormat.Plaintext;
 
             try

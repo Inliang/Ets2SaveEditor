@@ -1,5 +1,3 @@
-using System;
-using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -50,13 +48,10 @@ namespace Ets2SaveEditor
         {
             if (LbSlotFiles.SelectedItem is SlotFileItem file)
             {
-                // 双击只允许加载主存档 game.sii / economy.sii；
-                // 元数据 / 备份 / 0 字节文件一律拒绝，避免把 info.sii、
-                // game_backup.sii、game.sii.bak.<时间戳> 之类当成存档读进来。
-                string name = Path.GetFileName(file.FullPath);
-                bool isMainSave = string.Equals(name, "game.sii", StringComparison.OrdinalIgnoreCase) ||
-                                  string.Equals(name, "economy.sii", StringComparison.OrdinalIgnoreCase);
-                if (!isMainSave || !MainViewModel.IsEditableSaveFile(file.FullPath))
+                // 与 MainViewModel.LoadFile 共用同一套黑名单判定，避免逻辑分叉：
+                // 元数据 / 备份 / 0 字节文件一律拒绝（info.sii、game_backup.sii、
+                // game.sii.bak.<时间戳> 等），其余 .sii 正常加载。
+                if (!MainViewModel.IsEditableSaveFile(file.FullPath))
                 {
                     MessageBox.Show("该文件是元数据或备份，不是可编辑存档，请点『加载存档』加载 game.sii",
                                     "无法加载", MessageBoxButton.OK, MessageBoxImage.Information);
